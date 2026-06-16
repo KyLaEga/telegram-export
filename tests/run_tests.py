@@ -235,6 +235,22 @@ def test_theme_toggle(app) -> None:
           "StatCard перекрашен под активную тему")
 
 
+# ── 9. Writable data dir (read-only bundle → errno 30 fix) ──────────────────────
+def test_data_dir() -> None:
+    print("test_data_dir")
+    import export_media as em
+
+    check(em._is_writable_dir(tempfile.gettempdir()), "_is_writable_dir(tmp)=True")
+    check(not em._is_writable_dir("/no_write_here_probe_dir"),
+          "_is_writable_dir(read-only /)=False")
+    check(em._user_data_dir().endswith("Telegram Export"),
+          "_user_data_dir ends with app name")
+    # The resolved DATA_DIR must always be writable (this is what the .session,
+    # config.json and Pyrogram's unknown_errors.txt are written to).
+    check(em._is_writable_dir(em.DATA_DIR), "DATA_DIR is writable")
+    check(em.CONFIG_PATH.startswith(em.DATA_DIR), "CONFIG_PATH lives under DATA_DIR")
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv)
@@ -246,6 +262,7 @@ def main() -> int:
     test_i18n()
     test_localization_smoke(app)
     test_theme_toggle(app)
+    test_data_dir()
 
     print()
     if _FAILURES:

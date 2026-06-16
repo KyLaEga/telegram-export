@@ -11,7 +11,7 @@
 [tool.briefcase]
 project_name = "Telegram Export"
 bundle = "com.telegramexport"
-version = "0.3.0"
+version = "0.3.1"
 url = "https://github.com/KyLaEga/telegram-export"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -58,9 +58,10 @@ requires = [
 ]
 
 [tool.briefcase.app.telegram-export.macOS]
-# Host-arch build (universal needs universal wheels for PySide6/TgCrypto which
-# aren't always published). Flip to true if you need a universal2 binary.
-universal_build = false
+# Universal2 (Intel + Apple Silicon): all our deps ship universal2 / pure-python
+# wheels (PySide6 universal2; Pyrogram/PySocks/pyaes are py3-none-any), so the
+# bundle runs natively on both architectures.
+universal_build = true
 requires = [
     "std-nslog~=1.0",
 ]

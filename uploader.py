@@ -93,7 +93,7 @@ def scan_folder(folder: str, recursive: bool) -> list[str]:
 
 # ── Изолированная immortal-БД отправленного (upload_state.db) ────────────────────
 def upload_db_connect() -> sqlite3.Connection:
-    path = os.path.join(em.SCRIPT_DIR, UPLOAD_DB_NAME)
+    path = os.path.join(em.DATA_DIR, UPLOAD_DB_NAME)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -197,12 +197,12 @@ async def run_upload(cfg, folder, chat=None, options: "UploadOptions | None" = N
     folder = os.path.abspath(os.path.expanduser(folder))
     if not os.path.isdir(folder):
         raise em.ExportError(f"❌ Папка не найдена: {folder}")
-    em.LOG = em.setup_logger(em.SCRIPT_DIR)         # логи рядом со скриптом (как upload_state.db)
-    em.ERR_LOG = em.setup_error_logger(em.SCRIPT_DIR)
+    em.LOG = em.setup_logger(em.DATA_DIR)           # logs next to upload_state.db (writable dir)
+    em.ERR_LOG = em.setup_error_logger(em.DATA_DIR)
 
     conn = upload_db_connect()
     app = Client(em.SESSION_NAME, api_id=cfg["api_id"], api_hash=cfg["api_hash"],
-                 phone_number=cfg["phone"], workdir=em.SCRIPT_DIR, no_updates=True)
+                 phone_number=cfg["phone"], workdir=em.DATA_DIR, no_updates=True)
 
     result: dict = {}
     sent = failed = sent_bytes = 0

@@ -81,7 +81,43 @@ from fast_download import fast_download_file, FastUnavailable, close_all_pools
 
 # ──────────────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
+
+
+def _is_writable_dir(path: str) -> bool:
+    """True if files can be created in `path` (False for a read-only app bundle)."""
+    try:
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".write_probe")
+        with open(probe, "w") as fh:
+            fh.write("ok")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def _user_data_dir() -> str:
+    """Per-user, always-writable app-data directory, used when SCRIPT_DIR is a
+    read-only packaged bundle (.app / .msi / .AppImage)."""
+    app = "Telegram Export"
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    elif os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, app)
+
+
+# DATA_DIR — where config, the Telegram session and (per-account) logs live. Running
+# from source it's the project dir (SCRIPT_DIR), keeping existing files in place. In a
+# read-only packaged bundle SCRIPT_DIR isn't writable, so fall back to the per-user
+# data dir — otherwise Pyrogram's .session / unknown_errors.txt hit a read-only
+# filesystem (errno 30) the moment you request a login code.
+DATA_DIR = SCRIPT_DIR if _is_writable_dir(SCRIPT_DIR) else _user_data_dir()
+os.makedirs(DATA_DIR, exist_ok=True)
+
+CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 SESSION_NAME = "tg_export_session"
 CHUNK_SIZE = 1024 * 1024
 DB_NAME = "index.db"                          # кэш Telegram: индекс ID/метаданные (SQLite)
@@ -462,7 +498,7 @@ def reset_config() -> None:
     if os.path.exists(CONFIG_PATH):
         os.remove(CONFIG_PATH)
         print(f"🗑  Удалён {CONFIG_PATH}")
-    session_file = os.path.join(SCRIPT_DIR, f"{SESSION_NAME}.session")
+    session_file = os.path.join(DATA_DIR, f"{SESSION_NAME}.session")
     if os.path.exists(session_file):
         if ask("Удалить также .session (потребуется новый код)? [y/N]").lower() in ("y", "yes", "д", "да"):
             os.remove(session_file)
@@ -1909,7 +1945,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
     # no_updates=True: это качалка, апдейты не нужны — иначе Pyrogram спамит
     # «Peer id invalid …» на чужие каналы в фоне и зря грузит соединение.
     app = Client(SESSION_NAME, api_id=cfg["api_id"], api_hash=cfg["api_hash"],
-                 phone_number=cfg["phone"], workdir=SCRIPT_DIR, no_updates=True)
+                 phone_number=cfg["phone"], workdir=DATA_DIR, no_updates=True)
 
     result: dict = {"dest": dest}    # путь назначения — для экрана отчётов/«открыть папку»
     try:

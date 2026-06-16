@@ -207,7 +207,7 @@ class EngineController(QObject):
         self._auth_inbox = asyncio.Queue()
         inbox = self._auth_inbox
         app = Client(em.SESSION_NAME, api_id=cfg["api_id"], api_hash=cfg["api_hash"],
-                     workdir=em.SCRIPT_DIR)
+                     workdir=em.DATA_DIR)
         try:
             await app.connect()
             # Уже авторизованы? get_me() вернёт пользователя без запроса кода.
