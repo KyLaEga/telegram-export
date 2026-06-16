@@ -143,6 +143,26 @@ localisation engine (EN/RU key parity + live switching), and the dark/light them
 
 ---
 
+## Build a macOS app (.app / .dmg)
+
+Packaged with [BeeWare Briefcase](https://briefcase.readthedocs.io/) (config in
+[`pyproject.toml`](pyproject.toml); app icon in `gui/resources/appicon.icns`):
+
+```bash
+venv/bin/python3.12 -m pip install briefcase
+venv/bin/python3.12 -m briefcase create macOS     # bundle deps into the .app
+venv/bin/python3.12 -m briefcase build  macOS     # ad-hoc sign the .app
+venv/bin/python3.12 -m briefcase run    macOS     # launch the built app
+venv/bin/python3.12 -m briefcase package macOS --adhoc-sign   # → dist/*.dmg
+```
+
+The bundle pins `PySide6==6.7.3` and ships a local `wheelhouse/pyaes` wheel (the
+Briefcase Python installs with `--only-binary`, and those have no upstream wheel for
+the target). The resulting `.dmg` is ad-hoc signed — fine for local use; for
+distribution you'd sign with a Developer ID and notarize.
+
+---
+
 ## Project layout
 
 ```

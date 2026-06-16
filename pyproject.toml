@@ -27,7 +27,7 @@ sign in, choose download options, watch live multi-worker progress, review
 duplicates, and a separate pipeline to upload a folder back to a channel.
 Dark/light theme and English/Russian, switchable at runtime.
 """
-# icon = "gui/resources/appicon"   # uncomment after adding an .icns/.png
+icon = "gui/resources/appicon"   # gui/resources/appicon.icns (macOS app icon)
 
 # Entry point: the `telegram_export` package (its __main__.py runs gui.app.main()).
 # Briefcase requires a source package whose name matches the app name.
