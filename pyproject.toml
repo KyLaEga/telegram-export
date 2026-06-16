@@ -1,0 +1,58 @@
+# ── Упаковка в нативный .app (Phase 3) — BeeWare Briefcase ────────────────────────
+#
+# ⚠️ СКАФФОЛД, не проверен сборкой в этом окружении (briefcase не установлен, .app
+#    требует Xcode CLT + опционально подписи). Шаги сборки:
+#
+#      venv/bin/python3.12 -m pip install briefcase
+#      briefcase create macOS
+#      briefcase build  macOS
+#      briefcase run    macOS          # запустить собранный .app
+#      briefcase package macOS --no-sign   # .dmg без нотаризации (для локального теста)
+#
+#    Перед первой сборкой: положить иконку в gui/resources/ и прописать её ниже (icon=).
+#
+# Briefcase бандлит указанные в `sources` пакеты/модули как есть, точка входа — gui/__main__.py.
+
+[tool.briefcase]
+project_name = "Telegram Export"
+bundle = "com.telegramexport"
+version = "0.3.0"
+url = "https://example.com/telegram-export"
+license = "Proprietary"
+author = "Telegram Export"
+author_email = "dev@example.com"
+
+[tool.briefcase.app.telegram-export]
+formal_name = "Telegram Export"
+description = "Нативное приложение для экспорта и отгрузки медиа Telegram"
+long_description = """
+Telegram Export — настольное приложение поверх проверенного движка export_media.py:
+вход в аккаунт, выбор параметров загрузки, живой прогресс по нескольким потокам,
+ревью дублей и отдельный конвейер отгрузки папки обратно в канал.
+"""
+# icon = "gui/resources/appicon"   # раскомментировать после добавления .icns/.png
+
+# Точка входа: пакет gui с __main__.py (запускает gui.app.main()).
+sources = [
+    "gui",
+    "export_media.py",
+    "uploader.py",
+    "fast_download.py",
+]
+test_sources = [
+    "tests",
+]
+
+requires = [
+    "Pyrogram==2.0.106",
+    "TgCrypto==1.2.5",
+    "PySide6==6.11.1",
+    "pyaes==1.6.1",
+    "PySocks==1.7.1",
+]
+
+[tool.briefcase.app.telegram-export.macOS]
+universal_build = true
+requires = [
+    "std-nslog~=1.0",
+]

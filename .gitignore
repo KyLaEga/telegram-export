@@ -1,0 +1,51 @@
+# ==========================================================================
+# Secrets & personal data — NEVER commit these.
+# config.json holds api_id/api_hash/phone/channel/dest; the .session file is a
+# live Telegram login token (anyone with it can access the account).
+# ==========================================================================
+config.json
+config.local.json
+*.session
+*.session-journal
+
+# Engine state / databases (per-account, per-channel — not for sharing)
+*.db
+*.db-wal
+*.db-shm
+download_state.db
+upload_state.db
+index.db
+
+# Logs & reports
+*.log
+export_log.txt
+error_export.log
+*_report.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Backups & scratch
+*.bak
+*.orig
+*.tmp
+
+# Packaging artefacts (briefcase / PyInstaller)
+*.app/
+*.dmg
+*.spec.bak
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

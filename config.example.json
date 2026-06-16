@@ -1,0 +1,7 @@
+{
+  "api_id": 0,
+  "api_hash": "your_32_char_api_hash_from_my_telegram_org",
+  "phone": "+10000000000",
+  "channel": "@your_channel_or_t.me_link_or_id",
+  "dest": "/Volumes/SSD/telegram_export"
+}
