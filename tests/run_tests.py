@@ -178,6 +178,18 @@ def test_i18n() -> None:
     check("4" in t("warn_conn", total=4, workers=1, per=4), "tr(**fmt) подставляет")
     # Неизвестный ключ деградирует в сам ключ (без исключения).
     check(t("___missing___") == "___missing___", "неизвестный ключ → сам ключ")
+
+    # Raw '&' в тексте Qt трактуется как мнемоника (ломает QGroupBox/QPushButton/
+    # QCheckBox: «Threads & speed» → «Threads _speed»). Запрещаем сырой амперсанд.
+    amp = [k for d in (_EN, _RU) for k, v in d.items() if "&" in str(v)]
+    check(not amp, f"нет сырых '&' в строках (мнемоника Qt): {amp}")
+
+    # fmt_speed локализован (а не RU-движковый).
+    from gui.screens._fmt import fmt_speed
+    translator.set_language("en")
+    check(fmt_speed(5 * 1024 * 1024).endswith("MB/s"), "fmt_speed EN → MB/s")
+    translator.set_language("ru")
+    check(fmt_speed(5 * 1024 * 1024).endswith("МБ/с"), "fmt_speed RU → МБ/с")
     translator.set_language("en")
 
 

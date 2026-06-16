@@ -1,39 +1,38 @@
-# ── Упаковка в нативный .app (Phase 3) — BeeWare Briefcase ────────────────────────
+# ── Native .app packaging (Phase 3) — BeeWare Briefcase ──────────────────────────
 #
-# ⚠️ СКАФФОЛД, не проверен сборкой в этом окружении (briefcase не установлен, .app
-#    требует Xcode CLT + опционально подписи). Шаги сборки:
+#   venv/bin/python3.12 -m briefcase create macOS
+#   venv/bin/python3.12 -m briefcase build  macOS
+#   venv/bin/python3.12 -m briefcase run    macOS          # run the built .app
+#   venv/bin/python3.12 -m briefcase package macOS --adhoc-sign   # .dmg, local (unsigned)
 #
-#      venv/bin/python3.12 -m pip install briefcase
-#      briefcase create macOS
-#      briefcase build  macOS
-#      briefcase run    macOS          # запустить собранный .app
-#      briefcase package macOS --no-sign   # .dmg без нотаризации (для локального теста)
-#
-#    Перед первой сборкой: положить иконку в gui/resources/ и прописать её ниже (icon=).
-#
-# Briefcase бандлит указанные в `sources` пакеты/модули как есть, точка входа — gui/__main__.py.
+# Briefcase bundles the packages/modules listed in `sources` as-is; entry point is
+# gui/__main__.py (which runs gui.app.main()). Add a custom icon later via `icon=`.
 
 [tool.briefcase]
 project_name = "Telegram Export"
 bundle = "com.telegramexport"
 version = "0.3.0"
-url = "https://example.com/telegram-export"
-license = "Proprietary"
-author = "Telegram Export"
-author_email = "dev@example.com"
+url = "https://github.com/KyLaEga/telegram-export"
+license = "MIT"
+license-files = ["LICENSE"]
+author = "KyLaEga"
+author_email = "ivan2002k15@gmail.com"
 
 [tool.briefcase.app.telegram-export]
 formal_name = "Telegram Export"
-description = "Нативное приложение для экспорта и отгрузки медиа Telegram"
+description = "Native app to export and upload Telegram media"
 long_description = """
-Telegram Export — настольное приложение поверх проверенного движка export_media.py:
-вход в аккаунт, выбор параметров загрузки, живой прогресс по нескольким потокам,
-ревью дублей и отдельный конвейер отгрузки папки обратно в канал.
+Telegram Export is a desktop app over the proven export_media.py engine:
+sign in, choose download options, watch live multi-worker progress, review
+duplicates, and a separate pipeline to upload a folder back to a channel.
+Dark/light theme and English/Russian, switchable at runtime.
 """
-# icon = "gui/resources/appicon"   # раскомментировать после добавления .icns/.png
+# icon = "gui/resources/appicon"   # uncomment after adding an .icns/.png
 
-# Точка входа: пакет gui с __main__.py (запускает gui.app.main()).
+# Entry point: the `telegram_export` package (its __main__.py runs gui.app.main()).
+# Briefcase requires a source package whose name matches the app name.
 sources = [
+    "telegram_export",
     "gui",
     "export_media.py",
     "uploader.py",
@@ -45,14 +44,23 @@ test_sources = [
 
 requires = [
     "Pyrogram==2.0.106",
-    "TgCrypto==1.2.5",
-    "PySide6==6.11.1",
-    "pyaes==1.6.1",
+    # TgCrypto is an OPTIONAL C-extension speedup for Pyrogram with no wheel for the
+    # bundled Python; Pyrogram falls back to pure-Python pyaes (below), so it is
+    # omitted from the .app bundle. Keep it in requirements.txt for running from source.
+    # PySide6: the Briefcase standalone Python only has wheels up to 6.7.x (6.8+ needs a
+    # higher macOS target); the app uses only stable APIs, so 6.7.3 is bundled. The dev
+    # environment (requirements.txt) keeps 6.11.1.
+    "PySide6==6.7.3",
+    # pyaes ships sdist-only; Briefcase installs with `--only-binary :all:`, so we
+    # bundle a locally-built pure-Python wheel (see wheelhouse/, committed).
+    "wheelhouse/pyaes-1.6.1-py3-none-any.whl",
     "PySocks==1.7.1",
 ]
 
 [tool.briefcase.app.telegram-export.macOS]
-universal_build = true
+# Host-arch build (universal needs universal wheels for PySide6/TgCrypto which
+# aren't always published). Flip to true if you need a universal2 binary.
+universal_build = false
 requires = [
     "std-nslog~=1.0",
 ]

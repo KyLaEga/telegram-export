@@ -8,6 +8,12 @@ state, and a multi-worker download dashboard.
 > 🇷🇺 Русская версия README — [README.ru.md](README.ru.md). The app ships in **English
 > and Russian**, switchable live from the header.
 
+![Download dashboard — dark theme](assets/screenshot.png)
+
+<sub>Download dashboard (dark theme). Settings screen in light theme:</sub>
+
+![Export settings — light theme](assets/screenshot-light.png)
+
 ---
 
 ## Features

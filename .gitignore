@@ -18,6 +18,7 @@ index.db
 
 # Logs & reports
 *.log
+logs/
 export_log.txt
 error_export.log
 *_report.txt

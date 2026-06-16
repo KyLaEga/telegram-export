@@ -11,8 +11,15 @@ import os
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
-from export_media import fmt_speed, human_gb, human_mb  # noqa: F401 (re-export)
+from export_media import human_gb, human_mb  # noqa: F401 (re-export)
 from ..i18n import t
+
+
+def fmt_speed(bps: float) -> str:
+    """Localised transfer speed (engine fmt_speed is RU-only / shared with the CLI)."""
+    if bps >= 1024 * 1024:
+        return f"{bps / 1024 / 1024:.2f} {t('unit_speed_mb')}"
+    return f"{bps / 1024:.0f} {t('unit_speed')}"
 
 
 def open_path(path: str) -> bool:

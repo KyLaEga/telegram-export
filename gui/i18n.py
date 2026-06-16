@@ -89,6 +89,7 @@ _EN = {
     "unit_kb": "KB",
     "unit_b": "B",
     "unit_speed": "KB/s",
+    "unit_speed_mb": "MB/s",
 
     # ── login ──
     "login_title": "Telegram Export — Sign in",
@@ -149,7 +150,7 @@ _EN = {
     "hint_processing": (
         "Deduplication and best-quality selection save disk space by filtering out repeats "
         "and compressed copies. Unprocessed video is the fastest, 'raw' mode."),
-    "sec_threads": "Threads & speed",
+    "sec_threads": "Threads and speed",
     "cb_fast": "Multi-threaded download (several connections per file)",
     "tip_fast": "Download large files over several TCP connections at once (FastTelethon).",
     "tip_workers": (
@@ -263,7 +264,7 @@ _EN = {
     "up_failed_status": "🛑 Pipeline stopped with an error",
 
     # ── reports ──
-    "rep_title": "Reports & summary",
+    "rep_title": "Reports and summary",
     "rep_not_done": "Run not finished yet.",
     "sec_dl_summary": "Download summary",
     "card_already": "🟢 Already present",
@@ -316,6 +317,7 @@ _RU = {
     "unit_kb": "КБ",
     "unit_b": "Б",
     "unit_speed": "КБ/с",
+    "unit_speed_mb": "МБ/с",
 
     # ── login ──
     "login_title": "Telegram Export — вход",

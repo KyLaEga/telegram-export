@@ -142,6 +142,17 @@ QLabel#hint    {{ color: {p['muted']}; font-size: 11px; }}
 QLabel#statusInfo {{ color: {p['muted']}; }}
 QLabel#statusErr  {{ color: {DANGER}; }}
 
+/* Header bar — a distinct surface panel with a hairline divider, so it reads as a
+   header rather than blending into the page. */
+QWidget#topBar {{
+    background: {p['surface']};
+    border-bottom: 1px solid {p['border']};
+}}
+QWidget#topBar QLabel {{ color: {p['text']}; }}
+QWidget#topBar QComboBox {{
+    background: {p['input_bg']}; padding: 4px 8px; min-width: 92px; min-height: 26px;
+}}
+
 /* Container groups */
 QGroupBox {{
     background: {p['surface']};
@@ -207,12 +218,37 @@ QSpinBox::up-button {{ subcontrol-position: top right; margin: 1px 1px 0 0; }}
 QSpinBox::down-button {{ subcontrol-position: bottom right; margin: 0 1px 1px 0; }}
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{ border: 1px solid {PRIMARY}; }}
 QLineEdit:read-only {{ background: {p['btn_disabled_bg']}; color: {p['muted']}; }}
-QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 20px; border: none; }}
+QSpinBox:disabled, QComboBox:disabled {{ color: {p['btn_disabled_text']}; background: {p['btn_disabled_bg']}; }}
+
+/* ComboBox — combobox-popup:0 FORCES the QSS-styled list instead of the native
+   macOS popup (which ignored the dark theme and looked "from another era"). */
+QComboBox {{ combobox-popup: 0; }}
+QComboBox:hover {{ border: 1px solid {PRIMARY}; }}
+QComboBox:on, QComboBox:focus {{ border: 1px solid {PRIMARY}; }}
+QComboBox::drop-down {{
+    subcontrol-origin: padding; subcontrol-position: center right;
+    width: 22px; border: none; background: transparent; margin-right: 2px;
+}}
 QComboBox QAbstractItemView {{
     background: {p['surface']}; color: {p['text']};
-    border: 1px solid {p['border']}; border-radius: 6px; padding: 4px; outline: none;
+    border: 1px solid {p['border']}; border-radius: 8px; padding: 4px; outline: none;
     selection-background-color: {PRIMARY}; selection-color: #ffffff;
 }}
+QComboBox QAbstractItemView::item {{
+    min-height: 28px; padding: 4px 10px; border: none; border-radius: 6px;
+    color: {p['text']};
+}}
+QComboBox QAbstractItemView::item:hover {{ background: {p['btn_hover']}; color: {p['text']}; }}
+QComboBox QAbstractItemView::item:selected {{ background: {PRIMARY}; color: #ffffff; }}
+
+/* Native menus (context menus, etc.) match the theme too */
+QMenu {{
+    background: {p['surface']}; color: {p['text']};
+    border: 1px solid {p['border']}; border-radius: 8px; padding: 4px;
+}}
+QMenu::item {{ padding: 6px 18px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {PRIMARY}; color: #ffffff; }}
+QMenu::separator {{ height: 1px; background: {p['border']}; margin: 4px 8px; }}
 
 /* Checkboxes */
 QCheckBox {{ spacing: 8px; background: transparent; padding: 2px 0; }}
