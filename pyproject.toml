@@ -11,7 +11,7 @@
 [tool.briefcase]
 project_name = "Telegram Export"
 bundle = "com.telegramexport"
-version = "0.3.1"
+version = "0.3.2"
 url = "https://github.com/KyLaEga/telegram-export"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -47,10 +47,12 @@ requires = [
     # TgCrypto is an OPTIONAL C-extension speedup for Pyrogram with no wheel for the
     # bundled Python; Pyrogram falls back to pure-Python pyaes (below), so it is
     # omitted from the .app bundle. Keep it in requirements.txt for running from source.
-    # PySide6: the Briefcase standalone Python only has wheels up to 6.7.x (6.8+ needs a
-    # higher macOS target); the app uses only stable APIs, so 6.7.3 is bundled. The dev
-    # environment (requirements.txt) keeps 6.11.1.
-    "PySide6==6.7.3",
+    # PySide6-Essentials (NOT full PySide6): the app only imports QtCore/QtGui/QtWidgets,
+    # so we drop PySide6-Addons (QtWebEngine, Multimedia, Charts, Quick3D, …) — that's
+    # what bloated the bundle to ~1.7 GB. Pinned 6.7.3 because the Briefcase standalone
+    # Python only has wheels up to 6.7.x (6.8+ needs a higher macOS target); the app uses
+    # only stable APIs. The dev environment (requirements.txt) keeps full PySide6 6.11.1.
+    "PySide6-Essentials==6.7.3",
     # pyaes ships sdist-only; Briefcase installs with `--only-binary :all:`, so we
     # bundle a locally-built pure-Python wheel (see wheelhouse/, committed).
     "wheelhouse/pyaes-1.6.1-py3-none-any.whl",

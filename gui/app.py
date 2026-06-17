@@ -194,6 +194,17 @@ def options_default():
 
 
 def main() -> int:
+    # Packaged apps (.app / .msi / .AppImage) launch with a READ-ONLY working
+    # directory (often "/"). Pyrogram writes `unknown_errors.txt` to the CWD on any
+    # Telegram error it can't map — that write fails with errno 30 and propagates OUT
+    # of the error constructor, MASKING the real error and aborting login. Move to a
+    # guaranteed-writable directory before anything touches the network.
+    import export_media as em
+    try:
+        os.chdir(em.DATA_DIR)
+    except OSError:
+        pass
+
     app = QApplication(sys.argv)
     app.setApplicationName("Telegram Export")
     settings = QSettings("TelegramExport", "GUI")
