@@ -198,11 +198,19 @@ class EngineController(QObject):
         from pyrogram.errors import (
             SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired, FloodWait,
         )
+        from .i18n import t
+
+        # SentCodeType → a human "where the code went" clause (shown after "Code sent — ").
+        _DELIVERY = {
+            "APP": "delivery_app", "SMS": "delivery_sms", "CALL": "delivery_call",
+            "MISSED_CALL": "delivery_missed_call", "FLASH_CALL": "delivery_flash_call",
+            "FRAGMENT_SMS": "delivery_fragment", "EMAIL_CODE": "delivery_email",
+        }
 
         def describe(sent) -> str:
-            name = str(sent.type).split(".")[-1] if sent.type else "?"
-            nxt = str(sent.next_type).split(".")[-1] if sent.next_type else "нет"
-            return f"способ доставки: {name}; следующий доступный: {nxt}"
+            name = str(sent.type).split(".")[-1] if sent.type else ""
+            key = _DELIVERY.get(name)
+            return t(key) if key else t("delivery_other", type=name or "?")
 
         self._auth_inbox = asyncio.Queue()
         inbox = self._auth_inbox
@@ -227,12 +235,20 @@ class EngineController(QObject):
                     self._q.put(("__login__", ("cancelled", None)))
                     return
                 if action == "resend":
+                    # A failed resend must NOT abort login: the first code may already be
+                    # in the user's Telegram app. Telegram returns 406 SEND_CODE_UNAVAILABLE
+                    # for API logins (it won't escalate to SMS); keep the loop alive so the
+                    # user can still enter the code from their app.
                     try:
                         sent = await app.resend_code(cfg["phone"], sent.phone_code_hash)
                         self._q.put(("__login__", ("code_sent", describe(sent))))
                     except FloodWait as e:
-                        self._q.put(("__login__",
-                                     ("error", f"Слишком часто. Подождите {e.value} с.")))
+                        self._q.put(("__login__", ("error", t("login_flood", sec=e.value))))
+                    except Exception as e:  # noqa: BLE001
+                        key = ("login_resend_unavailable"
+                               if "SEND_CODE_UNAVAILABLE" in str(e)
+                               else "login_resend_failed")
+                        self._q.put(("__login__", ("error", t(key, err=e))))
                     continue
                 if action == "password":
                     try:
@@ -241,21 +257,20 @@ class EngineController(QObject):
                         self._q.put(("__login__", ("ok", self._greet(me))))
                         return
                     except Exception as e:  # noqa: BLE001
-                        self._q.put(("__login__", ("error", f"Пароль не принят: {e}")))
+                        self._q.put(("__login__", ("error", t("login_bad_password", err=e))))
                     continue
                 if action == "code":
                     code = (value or "").replace(" ", "")
                     if not code.isdigit():
-                        self._q.put(("__login__", ("error", "Код — это цифры.")))
+                        self._q.put(("__login__", ("error", t("login_code_digits"))))
                         continue
                     try:
                         await app.sign_in(cfg["phone"], sent.phone_code_hash, code)
                     except PhoneCodeInvalid:
-                        self._q.put(("__login__", ("error", "Неверный код.")))
+                        self._q.put(("__login__", ("error", t("login_wrong_code"))))
                         continue
                     except PhoneCodeExpired:
-                        self._q.put(("__login__",
-                                     ("error", "Код истёк — переотправьте.")))
+                        self._q.put(("__login__", ("error", t("login_code_expired"))))
                         continue
                     except SessionPasswordNeeded:
                         self._q.put(("__login__", ("need_password", None)))
@@ -264,7 +279,7 @@ class EngineController(QObject):
                     self._q.put(("__login__", ("ok", self._greet(me))))
                     return
         except Exception as e:  # noqa: BLE001
-            self._q.put(("__login__", ("error", f"Сбой подключения: {e}")))
+            self._q.put(("__login__", ("error", t("login_conn_fail", err=e))))
         finally:
             self._auth_inbox = None
             try:

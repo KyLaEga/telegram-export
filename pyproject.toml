@@ -11,7 +11,7 @@
 [tool.briefcase]
 project_name = "Telegram Export"
 bundle = "com.telegramexport"
-version = "0.3.2"
+version = "0.3.3"
 url = "https://github.com/KyLaEga/telegram-export"
 license = "MIT"
 license-files = ["LICENSE"]

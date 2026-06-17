@@ -120,6 +120,29 @@ _EN = {
     "msg_need_password": "2FA is enabled — enter your cloud password.",
     "msg_login_ok": "✅ Signed in: {greet}",
     "msg_login_cancelled": "Login cancelled.",
+    # Where Telegram delivered the login code (shown after "Code sent — ").
+    "delivery_app": ("into your Telegram app — open Telegram on another device "
+                     "(phone/desktop) and read the login code there. It does NOT arrive "
+                     "by SMS, and “Resend” won't work for API logins."),
+    "delivery_sms": "by SMS.",
+    "delivery_call": "via a phone call.",
+    "delivery_missed_call": "via a missed call (the code is the last digits of the number).",
+    "delivery_flash_call": "via a flash call.",
+    "delivery_fragment": "via Fragment (anonymous number) — check Fragment.",
+    "delivery_email": "to your email.",
+    "delivery_other": "({type}).",
+    "login_flood": "Too many attempts. Wait {sec}s.",
+    "login_code_digits": "The code is digits only.",
+    "login_wrong_code": "Wrong code.",
+    "login_code_expired": "Code expired — request it again.",
+    "login_bad_password": "Password not accepted: {err}",
+    "login_conn_fail": "Connection error: {err}",
+    "login_resend_unavailable": (
+        "Telegram won't resend the code (error SEND_CODE_UNAVAILABLE): for third-party "
+        "(API) logins it sends the code INTO your Telegram app, not by SMS. Open Telegram "
+        "on another device where you're logged in and enter the code shown there. If you "
+        "have no other logged-in device, sign in once in the official Telegram app first."),
+    "login_resend_failed": "Couldn't resend the code: {err}",
 
     # ── options ──
     "opt_title": "Export settings",
@@ -348,6 +371,30 @@ _RU = {
     "msg_need_password": "Включена 2FA — введите облачный пароль.",
     "msg_login_ok": "✅ Вход выполнен: {greet}",
     "msg_login_cancelled": "Логин отменён.",
+    # Куда Telegram отправил код (показывается после «Код отправлен — »).
+    "delivery_app": ("в приложение Telegram — откройте Telegram на другом устройстве "
+                     "(телефон/десктоп) и посмотрите код для входа там. По SMS он НЕ "
+                     "приходит, а «Переотправить» для входа через API не работает."),
+    "delivery_sms": "по SMS.",
+    "delivery_call": "звонком.",
+    "delivery_missed_call": "сбросом звонка (код — последние цифры номера).",
+    "delivery_flash_call": "флеш-звонком.",
+    "delivery_fragment": "через Fragment (анонимный номер) — проверьте Fragment.",
+    "delivery_email": "на вашу почту.",
+    "delivery_other": "({type}).",
+    "login_flood": "Слишком часто. Подождите {sec} с.",
+    "login_code_digits": "Код — это цифры.",
+    "login_wrong_code": "Неверный код.",
+    "login_code_expired": "Код истёк — запросите заново.",
+    "login_bad_password": "Пароль не принят: {err}",
+    "login_conn_fail": "Сбой подключения: {err}",
+    "login_resend_unavailable": (
+        "Telegram не отправляет код повторно (ошибка SEND_CODE_UNAVAILABLE): при входе "
+        "через сторонний клиент (API) код приходит В приложение Telegram, а не по SMS. "
+        "Откройте Telegram на другом устройстве, где вы авторизованы, и введите код "
+        "оттуда. Если других устройств нет — сначала войдите в официальном приложении "
+        "Telegram."),
+    "login_resend_failed": "Не удалось переотправить код: {err}",
 
     # ── options ──
     "opt_title": "Параметры экспорта",
