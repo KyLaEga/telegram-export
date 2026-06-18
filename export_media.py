@@ -1854,6 +1854,10 @@ class Options:
     force_include: frozenset = frozenset()
     # Только предпросмотр (скан+план без загрузки) — для экрана «Сканировать» в GUI.
     preview_only: bool = False
+    # Качать комиксы/файлы по ССЫЛКАМ из сообщений (web_page + URL в тексте), а не только
+    # прикреплённое медиа. link_format — формат сборки комиксов из страниц-галерей.
+    download_links: bool = False
+    link_format: str = "cbz"            # "cbz" | "pdf"
 
 
 def _build_preview(items, s, losers, workers, use_dedup) -> dict:
@@ -2065,46 +2069,62 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         if options.preview_only:
             return result
 
-        if s["need_files"] == 0:
-            REPORTER.status("✅ Всё уже скачано — загружать нечего.")
-            return result
-        REPORTER.status("")
-
         stats = Stats()
-        mlock = asyncio.Lock()
-        inprog: set[str] = set()
-        # ВНИМАНИЕ: используем общий stop_event (создан выше и привязан к обработчику
-        # сигналов в CLI / к request_stop в GUI) — не пересоздаём.
-        queue: asyncio.Queue = asyncio.Queue(maxsize=workers * 4)
+        # ── Загрузка прикреплённого медиа (если оно ещё не на диске) ──
+        if s["need_files"] == 0:
+            REPORTER.status("✅ Всё прикреплённое медиа уже скачано — новых файлов нет.")
+        else:
+            REPORTER.status("")
+            mlock = asyncio.Lock()
+            inprog: set[str] = set()
+            # ВНИМАНИЕ: используем общий stop_event (создан выше и привязан к обработчику
+            # сигналов в CLI / к request_stop в GUI) — не пересоздаём.
+            queue: asyncio.Queue = asyncio.Queue(maxsize=workers * 4)
 
-        feed = asyncio.create_task(feeder(items, queue, workers, stop_event))
-        tasks = [asyncio.create_task(
-            worker(f"w{i+1}", app, dest, queue, conn, mlock, inprog,
-                   stats, stop_event, use_dedup, use_fast, connections,
-                   force_include))
-            for i in range(workers)]
-        # Отдаём задачи обработчику сигналов: при повторном Ctrl+C он их отменит.
-        sig_holder["feed"] = feed
-        sig_holder["tasks"] = tasks
+            feed = asyncio.create_task(feeder(items, queue, workers, stop_event))
+            tasks = [asyncio.create_task(
+                worker(f"w{i+1}", app, dest, queue, conn, mlock, inprog,
+                       stats, stop_event, use_dedup, use_fast, connections,
+                       force_include))
+                for i in range(workers)]
+            # Отдаём задачи обработчику сигналов: при повторном Ctrl+C он их отменит.
+            sig_holder["feed"] = feed
+            sig_holder["tasks"] = tasks
 
-        try:
-            await feed
-            await asyncio.gather(*tasks)
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            # Ctrl-C: гасим всё аккуратно, чтобы не было «Task exception was never retrieved»
-            stop_event.set()
-            raise
-        finally:
-            feed.cancel()
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(feed, *tasks, return_exceptions=True)
-            await close_all_pools(app)
-            conn.commit()
+            try:
+                await feed
+                await asyncio.gather(*tasks)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                # Ctrl-C: гасим всё аккуратно, чтобы не было «Task exception was never retrieved»
+                stop_event.set()
+                raise
+            finally:
+                feed.cancel()
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(feed, *tasks, return_exceptions=True)
+                await close_all_pools(app)
+                conn.commit()
+
+        # ── Фаза ссылок/комиксов: качаем внешние ссылки (web_page / URL в тексте) ──
+        # Прикреплённые .pdf/.cbz движок берёт сам (kind=document); здесь — то, что лежит
+        # ВНЕ Telegram, по ссылке: страницы-галереи собираются в один PDF/CBZ.
+        if options.download_links and not stop_event.is_set():
+            try:
+                import link_export
+                result["link_stats"] = await link_export.run_link_phase(
+                    app, chat.id, dest, options.link_format, REPORTER, stop_event, log)
+            except Exception as e:                       # noqa: BLE001 — фаза ссылок не валит экспорт
+                log_error(0, f"link phase error: {e}")
+                REPORTER.status(f"⚠️  Фаза ссылок прервана ошибкой: {e}")
 
         summary = (f"скачано: {stats.downloaded} ({human_gb(stats.bytes_done):.2f} ГБ), "
                    f"уже было: {stats.skipped}, докачано/починено: {stats.repaired}, "
                    f"дубликатов: {stats.dedup}, ошибок: {stats.failed}.")
+        ls = result.get("link_stats")
+        if ls:
+            summary += (f" Ссылки: +{ls['saved']} (уже было {ls['skipped']}, "
+                        f"ошибок {ls['failed']}).")
         REPORTER.status(f"\n✅ Готово. {summary}")
         REPORTER.finished(summary, stop_event.is_set())
         log(f"=== DONE {summary}")
@@ -2162,6 +2182,11 @@ def parse_args():
                    help="аудит: сверить файлы на диске (verify_report.txt) и выйти, без скачивания")
     p.add_argument("--only", help="только эти типы: video,document,photo,audio,voice,...")
     p.add_argument("--skip", help="пропускать эти типы")
+    p.add_argument("--links", action="store_true",
+                   help="дополнительно качать комиксы/файлы по ССЫЛКАМ из сообщений "
+                        "(web_page и URL в тексте), а не только прикреплённое медиа")
+    p.add_argument("--links-format", choices=("cbz", "pdf"), default="cbz",
+                   help="формат сборки комиксов из страниц-галерей (по умолчанию cbz)")
     # ── Upload Pipeline (отправка папки в канал) ──
     p.add_argument("--upload", metavar="ПАПКА",
                    help="режим ОТПРАВКИ: рекурсивно загрузить файлы из ПАПКИ в канал "
@@ -2235,7 +2260,8 @@ def main() -> None:
         workers=workers, use_dedup=not args.no_dedup, rescan=args.rescan,
         allow_kinds=allow_kinds, skip_kinds=skip_kinds, use_fast=use_fast,
         connections=connections, verify=args.verify, use_quality=not args.no_quality,
-        faststart=not args.no_faststart)
+        faststart=not args.no_faststart,
+        download_links=args.links, link_format=args.links_format)
     try:
         # CLI: Reporter по умолчанию (CliReporter), движок сам ставит SIGINT-обработчик.
         asyncio.run(run_export(cfg, options))

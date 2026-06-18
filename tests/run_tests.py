@@ -96,6 +96,19 @@ def test_options_build(app) -> None:
         check(scr.sp_workers.minimumHeight() >= 30 and
               scr.sp_connections.minimumHeight() >= 30,
               "спинбоксы: minimumHeight ≥ 30")
+
+        # Ссылки/комиксы: дефолт выкл, формат-комбо заблокировано до включения.
+        od = scr.build_options()
+        check(od.download_links is False and od.link_format == "cbz",
+              "дефолт: download_links=False, link_format=cbz")
+        check(not scr.cmb_link_format.isEnabled(),
+              "формат-комбо выключено, пока ссылки не включены")
+        scr.cb_download_links.setChecked(True)
+        scr.cmb_link_format.setCurrentIndex(1)        # PDF
+        ol = scr.build_options()
+        check(ol.download_links is True and ol.link_format == "pdf",
+              "ссылки=✓ + PDF → build_options даёт download_links=True, link_format=pdf")
+        check(scr.cmb_link_format.isEnabled(), "ссылки=✓ → формат-комбо разблокировано")
     finally:
         ctl.shutdown()
 
@@ -251,6 +264,94 @@ def test_data_dir() -> None:
     check(em.CONFIG_PATH.startswith(em.DATA_DIR), "CONFIG_PATH lives under DATA_DIR")
 
 
+# ── 9. Скачивание по ссылкам (link_export): чистые функции + сборка ───────────────
+def test_link_export() -> None:
+    print("test_link_export")
+    import zipfile
+
+    import link_export as le
+
+    # extract_links: web_page + entity-url + голые URL, без дублей, http-only, порядок.
+    class _Ent:
+        def __init__(self, url): self.url = url
+
+    class _WP:
+        url = "https://s.tld/c/1"; display_url = "s.tld/c/1"; title = "Comic 1"
+
+    class _Msg:
+        web_page = _WP()
+        text = "x https://i.tld/a.jpg https://i.tld/a.jpg"
+        entities = [_Ent("https://h.tld/f.cbz")]
+        caption = None; caption_entities = []
+
+    check(le.extract_links(_Msg()) ==
+          ["https://s.tld/c/1", "https://h.tld/f.cbz", "https://i.tld/a.jpg"],
+          "extract_links: web_page+entity+text, dedup, http-only, порядок")
+
+    check(le.classify_url("https://x/y.PDF?a=1") == "file", "classify_url .pdf → file")
+    check(le.classify_url("https://x/y.webp") == "image", "classify_url .webp → image")
+    check(le.classify_url("https://x/read/1") == "page", "classify_url без ext → page")
+
+    # scrape_image_urls: <img>/lazy/<a>, относительные → абсолютные, мусор отброшен.
+    html = ('<img src="p1.jpg"><img data-src="/a/p2.png">'
+            '<a href="p3.webp">x</a><img src="/logo.png">')
+    check(le.scrape_image_urls(html, "https://c.tld/r/") ==
+          ["https://c.tld/r/p1.jpg", "https://c.tld/a/p2.png", "https://c.tld/r/p3.webp"],
+          "scrape: разрешает относительные и режет logo")
+    check(le.scrape_image_urls('<meta property="og:image" content="/o.jpg">',
+                               "https://c.tld/") == ["https://c.tld/o.jpg"],
+          "scrape: og:image как фолбэк")
+
+    check(le.slugify("Hi/There #2!") == "HiThere_2", "slugify санитайзит имя")
+    jpg_hdr = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+    check(le.sniff_image_ext(jpg_hdr) == ".jpg", "sniff_image_ext JPEG")
+    check(le.sniff_image_ext(b"\x89PNG\r\n\x1a\nXX") == ".png", "sniff_image_ext PNG")
+
+    d = tempfile.mkdtemp()
+    cbz = os.path.join(d, "c.cbz")
+    le.save_cbz([("a.jpg", jpg_hdr), ("b.png", b"\x89PNG\r\n\x1a\nXX")], cbz)
+    with zipfile.ZipFile(cbz) as z:
+        check(z.namelist() == ["0001.jpg", "0002.png"], "save_cbz: страницы пронумерованы")
+
+    # Безбиблиотечный PDF из реального JPEG (если есть Pillow для генерации эталона).
+    try:
+        import io as _io
+
+        from PIL import Image
+        b = _io.BytesIO(); Image.new("RGB", (12, 9), (10, 20, 30)).save(b, "JPEG")
+        real = b.getvalue()
+        check(le._jpeg_dimensions(real) == (12, 9, 3), "_jpeg_dimensions из SOF")
+        pdf = os.path.join(d, "df.pdf")
+        le._save_pdf_jpeg_only([("a.jpg", real)], pdf)
+        raw = open(pdf, "rb").read()
+        check(raw[:5] == b"%PDF-" and raw.rstrip().endswith(b"%%EOF"),
+              "безбиблиотечный PDF: корректные заголовок и хвост")
+    except ImportError:
+        pass
+
+    # process_links_sync: страница-галерея → один комикс; повтор — пропуск; прямой файл.
+    page = '<img src="p1.jpg"><img src="p2.jpg">'
+    store = {
+        "https://c.tld/read/77": (page.encode(), "text/html; charset=utf-8",
+                                  "https://c.tld/read/77"),
+        "https://c.tld/read/p1.jpg": (jpg_hdr, "image/jpeg", "x"),
+        "https://c.tld/read/p2.jpg": (jpg_hdr, "image/jpeg", "x"),
+        "https://h.tld/f.cbz": (b"PK\x03\x04zipdata", "application/zip",
+                                "https://h.tld/f.cbz"),
+    }
+    fake = lambda url, referer=None, timeout=0: store[url]   # noqa: E731
+    r1 = le.process_links_sync(77, ["https://c.tld/read/77"], d, "cbz",
+                               label="t", http=fake)
+    check(r1["saved"] == 1, "process_links_sync: страница → 1 комикс собран")
+    r2 = le.process_links_sync(77, ["https://c.tld/read/77"], d, "cbz",
+                               label="t", http=fake)
+    check(r2["skipped"] == 1 and r2["saved"] == 0,
+          "process_links_sync: повторный прогон пропускает готовое (идемпотентность)")
+    r3 = le.process_links_sync(9, ["https://h.tld/f.cbz"], d, "cbz", http=fake)
+    check(r3["saved"] == 1, "process_links_sync: прямой .cbz сохранён как есть")
+    check(os.path.exists(os.path.join(d, "msg_9_f.cbz")), "прямой файл получил msg_-имя")
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv)
@@ -263,6 +364,7 @@ def main() -> int:
     test_localization_smoke(app)
     test_theme_toggle(app)
     test_data_dir()
+    test_link_export()
 
     print()
     if _FAILURES:

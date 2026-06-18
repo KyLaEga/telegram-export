@@ -179,6 +179,21 @@ _EN = {
     "hint_processing": (
         "Deduplication and best-quality selection save disk space by filtering out repeats "
         "and compressed copies. Unprocessed video is the fastest, 'raw' mode."),
+    "sec_links": "Links and comics",
+    "cb_download_links": "Also download comics and files from links in messages",
+    "tip_download_links": (
+        "Besides media attached to a message, fetch content from external LINKS (web-page\n"
+        "previews and URLs in text). Direct files (.pdf/.cbz/.zip/images) are saved as-is;\n"
+        "a gallery web page is scraped and its images are bundled into one comic. Everything\n"
+        "goes into the 'comics_and_links' subfolder, and is skipped if already downloaded."),
+    "lbl_link_format": "Save comics as:",
+    "tip_link_format": (
+        "Format used when bundling images from a web page (or several image links) into one "
+        "comic. CBZ is a ZIP of images — any image format, no extra libraries; PDF makes a "
+        "single document. Files that are already packaged (.pdf/.cbz) are kept as they are."),
+    "hint_links": (
+        "Useful for comics shared as a link rather than an attached file. JavaScript-heavy "
+        "reader sites may not expose their images; direct file links always work."),
     "sec_threads": "Threads and speed",
     "cb_fast": "Multi-threaded download (several connections per file)",
     "tip_fast": "Download large files over several TCP connections at once (FastTelethon).",
@@ -437,6 +452,23 @@ _RU = {
     "hint_processing": (
         "Дедупликация и выбор лучшего качества берегут место на диске, отсеивая "
         "повторы и сжатые копии. Без обработки видео — самый быстрый, но «сырой» режим."),
+    "sec_links": "Ссылки и комиксы",
+    "cb_download_links": "Качать комиксы и файлы по ссылкам из сообщений",
+    "tip_download_links": (
+        "Помимо медиа, прикреплённого к сообщению, скачивать содержимое по ВНЕШНИМ\n"
+        "ссылкам (превью web-страниц и URL в тексте). Прямые файлы (.pdf/.cbz/.zip/\n"
+        "картинки) сохраняются как есть; страница-галерея парсится, а её картинки\n"
+        "собираются в один комикс. Всё кладётся в подпапку «comics_and_links» и\n"
+        "пропускается, если уже скачано."),
+    "lbl_link_format": "Сохранять комиксы как:",
+    "tip_link_format": (
+        "Формат сборки, когда картинки со страницы (или несколько ссылок-картинок) "
+        "объединяются в один комикс. CBZ — это ZIP с картинками: любой формат, без "
+        "сторонних библиотек; PDF — единый документ. Уже готовые файлы (.pdf/.cbz) "
+        "сохраняются как есть."),
+    "hint_links": (
+        "Пригодится для комиксов, которыми делятся ссылкой, а не файлом. Сайты-читалки "
+        "с тяжёлым JavaScript могут не отдать картинки; прямые ссылки на файл работают всегда."),
     "sec_threads": "Потоки и скорость",
     "cb_fast": "Многопоточная загрузка (несколько соединений на файл)",
     "tip_fast": "Качать крупные файлы в несколько TCP-соединений одновременно (FastTelethon).",

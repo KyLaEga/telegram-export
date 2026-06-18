@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
+    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
 )
 
 import export_media as em
@@ -80,6 +80,27 @@ class OptionsScreen(QWidget):
         self.hint_processing = theme.hint_label("")
         pl.addWidget(self.hint_processing)
         root.addWidget(self.proc_box)
+
+        # ── Links & comics: download external links, not just attached media ──
+        self.links_box, ll = theme.section(t("sec_links"))
+        self.cb_download_links = QCheckBox()
+        self.cb_download_links.toggled.connect(self._on_links_toggled)
+        ll.addWidget(self.cb_download_links)
+        fmt_row = QHBoxLayout()
+        fmt_row.setSpacing(theme.SPACING)
+        self.lbl_link_format = QLabel()
+        self.cmb_link_format = QComboBox()
+        # userData carries the engine value; the label is just the display text.
+        self.cmb_link_format.addItem("CBZ", "cbz")
+        self.cmb_link_format.addItem("PDF", "pdf")
+        self.cmb_link_format.setEnabled(False)        # unlocked only when links are on
+        fmt_row.addWidget(self.lbl_link_format)
+        fmt_row.addWidget(self.cmb_link_format)
+        fmt_row.addStretch(1)
+        ll.addLayout(fmt_row)
+        self.hint_links = theme.hint_label("")
+        ll.addWidget(self.hint_links)
+        root.addWidget(self.links_box)
 
         # ── Threads & speed (parallelism) ──
         # No height limits on the group or the form — the container freely grows
@@ -174,6 +195,12 @@ class OptionsScreen(QWidget):
         self.cb_quality.setText(t("cb_quality"))
         self.cb_quality.setToolTip(t("tip_quality"))
         self.hint_processing.setText(t("hint_processing"))
+        self.links_box.setTitle(t("sec_links"))
+        self.cb_download_links.setText(t("cb_download_links"))
+        self.cb_download_links.setToolTip(t("tip_download_links"))
+        self.lbl_link_format.setText(t("lbl_link_format"))
+        self.cmb_link_format.setToolTip(t("tip_link_format"))
+        self.hint_links.setText(t("hint_links"))
         self.perf_box.setTitle(t("sec_threads"))
         self.cb_fast.setText(t("cb_fast"))
         self.cb_fast.setToolTip(t("tip_fast"))
@@ -196,6 +223,10 @@ class OptionsScreen(QWidget):
             if on:
                 cb.setChecked(True)
             cb.setEnabled(not on)
+
+    def _on_links_toggled(self, on: bool) -> None:
+        """Format picker is meaningful only when link/comic download is enabled."""
+        self.cmb_link_format.setEnabled(on)
 
     # ── interactive warning ────────────────────────────────────────────────────
     def _on_fast_toggled(self, on: bool) -> None:
@@ -223,6 +254,8 @@ class OptionsScreen(QWidget):
             connections=self.sp_connections.value(),
             use_quality=self.cb_quality.isChecked(),
             faststart=not self.cb_keep_raw_video.isChecked(),
+            download_links=self.cb_download_links.isChecked(),
+            link_format=self.cmb_link_format.currentData() or "cbz",
         )
 
     def _on_run(self) -> None:

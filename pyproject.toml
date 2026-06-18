@@ -59,6 +59,11 @@ requires = [
     "PySocks==1.7.1",
     # QR login: pure-Python QR matrix (rendered with QPainter, no Pillow needed).
     "qrcode==8.2",
+    # Comic-by-link download: assemble PDFs from images of ANY format (JPEG/PNG/WebP/GIF).
+    # Imported lazily in link_export — if a wheel is ever unavailable for the bundled
+    # Python, CBZ still works and PDF falls back to a built-in JPEG-only writer, so the
+    # feature degrades gracefully rather than breaking the build's import path.
+    "Pillow==12.2.0",
 ]
 
 [tool.briefcase.app.telegram-export.macOS]

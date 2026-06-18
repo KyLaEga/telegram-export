@@ -40,6 +40,16 @@ state, and a multi-worker download dashboard.
   - **Automatic FloodWait handling** and reconnection after dropped connections.
   - **faststart remux** so macOS spacebar preview and instant seeking work out of the box
     (toggleable).
+- **Comics & files by link** — besides media *attached* to a message (photos, videos,
+  documents — incl. `.pdf`/`.cbz` sent as files), the app can also fetch content from
+  external **links** in messages (web-page previews and URLs in text):
+  - **Direct file links** (`.pdf`, `.cbz`, `.zip`, images, …) are downloaded as-is.
+  - **Gallery web pages** are scraped and their images bundled into a single comic.
+  - **Pick the format** — save assembled comics as **CBZ** (a ZIP of images, any format,
+    no extra libraries) or **PDF** (Pillow for any image format; a built-in JPEG writer is
+    the fallback). Everything lands in a `comics_and_links/` subfolder and is skipped if
+    already downloaded. (JavaScript-heavy reader sites may not expose images; direct file
+    links always work.)
 - **Upload Pipeline** — send a folder back to a channel as native media (video with
   preview) with idempotent "skip already-uploaded" tracking (`upload_state.db`).
 - **Reports** — per-run summary cards plus one-click access to the text reports the
@@ -120,6 +130,9 @@ venv/bin/python3.12 export_media.py --rescan
 
 # Audit on-disk files against the plan
 venv/bin/python3.12 export_media.py --verify
+
+# Also download comics & files from links in messages (assemble pages as CBZ or PDF)
+venv/bin/python3.12 export_media.py --links --links-format pdf
 
 # Upload a folder back to a channel
 venv/bin/python3.12 uploader.py --target @your_channel /path/to/folder
