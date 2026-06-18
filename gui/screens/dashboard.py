@@ -87,7 +87,7 @@ class DownloadDashboard(QWidget):
         super().__init__(parent)
         # Screen safety floor (anti-collapse): props up minimumSizeHint of the
         # QStackedWidget so the Multi-Worker View and log don't collapse vertically.
-        self.setMinimumSize(850, 650)
+        self.setMinimumSize(760, 480)
         self._ctl = controller
         self._need = 0          # plan: files to download (need_files)
         self._have = 0          # plan: already on disk (have_files)

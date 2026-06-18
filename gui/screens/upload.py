@@ -37,7 +37,7 @@ class UploadScreen(QWidget):
         self._cfg: dict = {}
         # Screen safety floor: props up minimumSizeHint of the QStackedWidget so the
         # operations log and button row don't drift past the window's bottom edge.
-        self.setMinimumSize(850, 650)
+        self.setMinimumSize(760, 480)
         self._build()
         self._ctl.event.connect(self._on_event)
         self._ctl.run_done.connect(self._on_run_done)

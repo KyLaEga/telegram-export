@@ -37,7 +37,8 @@ class LoginScreen(QWidget):
 
     # ── layout ──────────────────────────────────────────────────────────────
     def _build(self) -> None:
-        root = theme.page_layout(self)
+        # Content scrolls instead of compressing on short windows (QR block is tall).
+        root, _outer = theme.scroll_page(self)
         self.title = theme.title_label(t("login_title"))
         root.addWidget(self.title)
 

@@ -47,7 +47,7 @@ class MainWindow(QWidget):
         # A firm "human" default plus a safety floor below which the window
         # physically cannot shrink. Without an explicit minimum the stack collapsed
         # content into an accordion and hid buttons below the screen edge.
-        self.setMinimumSize(850, 700)
+        self.setMinimumSize(760, 500)
         self.resize(880, 740)
         self._ctl = controller
         self._cfg: dict = {}

@@ -308,12 +308,16 @@ def test_link_export() -> None:
     check(le.sniff_image_ext(b"\x89PNG\r\n\x1a\nXX") == ".png", "sniff_image_ext PNG")
 
     d = tempfile.mkdtemp()
+    # Assembly is now PATH-based (низкая память): кладём страницы на диск и собираем.
+    p_jpg = os.path.join(d, "a.jpg"); open(p_jpg, "wb").write(jpg_hdr)
+    p_png = os.path.join(d, "b.png"); open(p_png, "wb").write(b"\x89PNG\r\n\x1a\nXX")
     cbz = os.path.join(d, "c.cbz")
-    le.save_cbz([("a.jpg", jpg_hdr), ("b.png", b"\x89PNG\r\n\x1a\nXX")], cbz)
+    le.save_cbz([p_jpg, p_png], cbz)
     with zipfile.ZipFile(cbz) as z:
-        check(z.namelist() == ["0001.jpg", "0002.png"], "save_cbz: страницы пронумерованы")
+        check(z.namelist() == ["0001.jpg", "0002.png"],
+              "save_cbz: страницы пронумерованы (сборка с диска)")
 
-    # Безбиблиотечный PDF из реального JPEG (если есть Pillow для генерации эталона).
+    # PDF из реального JPEG на диске (JPEG встраивается без Pillow; Pillow есть только в env).
     try:
         import io as _io
 
@@ -321,35 +325,50 @@ def test_link_export() -> None:
         b = _io.BytesIO(); Image.new("RGB", (12, 9), (10, 20, 30)).save(b, "JPEG")
         real = b.getvalue()
         check(le._jpeg_dimensions(real) == (12, 9, 3), "_jpeg_dimensions из SOF")
+        rp = os.path.join(d, "real.jpg"); open(rp, "wb").write(real)
         pdf = os.path.join(d, "df.pdf")
-        le._save_pdf_jpeg_only([("a.jpg", real)], pdf)
+        le.save_pdf([rp], pdf)
         raw = open(pdf, "rb").read()
         check(raw[:5] == b"%PDF-" and raw.rstrip().endswith(b"%%EOF"),
-              "безбиблиотечный PDF: корректные заголовок и хвост")
+              "потоковый PDF: корректные заголовок и хвост")
     except ImportError:
         pass
 
     # process_links_sync: страница-галерея → один комикс; повтор — пропуск; прямой файл.
+    # http(...) отдаёт HTML-страницы (байты); download(url,dst) пишет файл на диск.
     page = '<img src="p1.jpg"><img src="p2.jpg">'
-    store = {
+    html_store = {
         "https://c.tld/read/77": (page.encode(), "text/html; charset=utf-8",
                                   "https://c.tld/read/77"),
-        "https://c.tld/read/p1.jpg": (jpg_hdr, "image/jpeg", "x"),
-        "https://c.tld/read/p2.jpg": (jpg_hdr, "image/jpeg", "x"),
-        "https://h.tld/f.cbz": (b"PK\x03\x04zipdata", "application/zip",
-                                "https://h.tld/f.cbz"),
     }
-    fake = lambda url, referer=None, timeout=0: store[url]   # noqa: E731
+    bin_store = {
+        "https://c.tld/read/p1.jpg": jpg_hdr,
+        "https://c.tld/read/p2.jpg": jpg_hdr,
+        "https://h.tld/f.cbz": b"PK\x03\x04zipdata",
+    }
+
+    def fake_http(url, referer=None, timeout=0, max_bytes=0):
+        return html_store[url]
+
+    def fake_dl(url, dst, referer=None, timeout=0, max_bytes=0):
+        with open(dst, "wb") as f:
+            f.write(bin_store[url])
+        return "application/octet-stream", url
+
     r1 = le.process_links_sync(77, ["https://c.tld/read/77"], d, "cbz",
-                               label="t", http=fake)
-    check(r1["saved"] == 1, "process_links_sync: страница → 1 комикс собран")
+                               label="t", http=fake_http, downloader=fake_dl, workers=2)
+    check(r1["saved"] == 1, "process_links_sync: страница → 1 комикс собран (параллельно, с диска)")
     r2 = le.process_links_sync(77, ["https://c.tld/read/77"], d, "cbz",
-                               label="t", http=fake)
+                               label="t", http=fake_http, downloader=fake_dl, workers=2)
     check(r2["skipped"] == 1 and r2["saved"] == 0,
           "process_links_sync: повторный прогон пропускает готовое (идемпотентность)")
-    r3 = le.process_links_sync(9, ["https://h.tld/f.cbz"], d, "cbz", http=fake)
+    r3 = le.process_links_sync(9, ["https://h.tld/f.cbz"], d, "cbz",
+                               http=fake_http, downloader=fake_dl)
     check(r3["saved"] == 1, "process_links_sync: прямой .cbz сохранён как есть")
     check(os.path.exists(os.path.join(d, "msg_9_f.cbz")), "прямой файл получил msg_-имя")
+    # Временные папки сборки комикса убираются за собой.
+    check(not [x for x in os.listdir(d) if x.startswith(".comic_")],
+          "временные папки сборки удалены")
 
 
 def main() -> int:

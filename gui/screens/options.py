@@ -40,16 +40,18 @@ class OptionsScreen(QWidget):
     def __init__(self, controller: EngineController, parent=None) -> None:
         super().__init__(parent)
         self._ctl = controller
-        # Screen safety floor: props up minimumSizeHint of the QStackedWidget so
-        # content doesn't collapse into an accordion when the window shrinks.
-        self.setMinimumSize(850, 650)
+        # Content lives in a scroll area (see _build), so the screen can shrink without
+        # compressing the form — the safety floor is much lower than the content height.
+        self.setMinimumSize(560, 360)
         self._build()
         self._ctl.busy_changed.connect(self._on_busy)
         self._refresh_warning()
 
     # ── layout ──────────────────────────────────────────────────────────────
     def _build(self) -> None:
-        root = theme.page_layout(self)
+        # Sections scroll; the action bar is pinned outside the scroll area so
+        # "Start export" stays visible no matter how short the window gets.
+        root, outer = theme.scroll_page(self)
         self.title = theme.title_label(t("opt_title"))
         root.addWidget(self.title)
 
@@ -153,9 +155,10 @@ class OptionsScreen(QWidget):
 
         root.addStretch(1)
 
-        # ── action row ──
+        # ── action row (pinned: lives in `outer`, below the scroll area) ──
         actions = QHBoxLayout()
         actions.setSpacing(theme.SPACING)
+        actions.setContentsMargins(theme.MARGIN, theme.SPACING, theme.MARGIN, theme.MARGIN)
         self.back_btn = QPushButton()
         self.back_btn.clicked.connect(self.back.emit)
         self.upload_btn = QPushButton()
@@ -177,7 +180,7 @@ class OptionsScreen(QWidget):
         actions.addWidget(self.spinner)
         actions.addWidget(self.status)
         actions.addWidget(self.run_btn)
-        root.addLayout(actions)
+        outer.addLayout(actions)
 
         self.retranslate()
 

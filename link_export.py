@@ -28,11 +28,13 @@ classify_url, scrape_image_urls, slugify, сборка PDF/CBZ) покрыты �
 from __future__ import annotations
 
 import asyncio
-import io
 import os
 import re
+import shutil
 import struct
+import tempfile
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -61,9 +63,14 @@ _URL_RE = re.compile(r"https?://[^\s<>()\[\]{}\"']+", re.I)
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 telegram-export")
 
-# Защита от страниц-бомб: не тянем в память бесконечный ответ.
-MAX_BYTES = 200 * 1024 * 1024            # 200 МБ на один файл/страницу
+# Защита от страниц-бомб и контроль памяти.
+MAX_BYTES = 2 * 1024 * 1024 * 1024       # 2 ГБ потолок на ОДИН файл (качаем на диск чанками)
+MAX_HTML = 25 * 1024 * 1024              # HTML-страницу читаем в память, но не больше 25 МБ
+CHUNK = 256 * 1024                        # размер чанка потоковой загрузки (постоянная память)
 HTTP_TIMEOUT = 40
+# Сколько страниц комикса качать ПАРАЛЛЕЛЬНО (главный ускоритель: вместо 50
+# последовательных запросов — пул потоков). На лимитах сервера не агрессивно.
+LINK_IMG_WORKERS = 6
 
 
 # ── 1. Извлечение ссылок из сообщения ─────────────────────────────────────────
@@ -195,20 +202,44 @@ def scrape_image_urls(html: str, base_url: str) -> list[str]:
 
 
 # ── 4. HTTP ───────────────────────────────────────────────────────────────────
-def http_get(url: str, referer: str | None = None,
-             timeout: int = HTTP_TIMEOUT) -> tuple[bytes, str, str]:
-    """GET → (тело, content_type, итоговый_url). Identity-кодировка (без gzip-распаковки),
-    свой User-Agent (иначе часть сайтов отдаёт 403). Обрезает тело по MAX_BYTES."""
+def _open(url: str, referer: str | None, timeout: int):
+    """Открыть HTTP(S)-поток с нашим User-Agent (иначе часть сайтов отдаёт 403) и без
+    gzip (Accept-Encoding: identity — чтобы не распаковывать в памяти)."""
     headers = {"User-Agent": _UA, "Accept": "*/*", "Accept-Encoding": "identity"}
     if referer:
         headers["Referer"] = referer
-    req = Request(url, headers=headers)
-    with urlopen(req, timeout=timeout) as r:             # noqa: S310 — http(s) проверен выше
-        data = r.read(MAX_BYTES + 1)
-        if len(data) > MAX_BYTES:
-            raise ValueError(f"ответ больше {MAX_BYTES // (1024 * 1024)} МБ — пропуск")
+    return urlopen(Request(url, headers=headers), timeout=timeout)   # noqa: S310 — схема проверена
+
+
+def http_get(url: str, referer: str | None = None, timeout: int = HTTP_TIMEOUT,
+             max_bytes: int = MAX_HTML) -> tuple[bytes, str, str]:
+    """GET HTML-страницы → (тело, content_type, итоговый_url). Тело целиком в память, но с
+    жёстким потолком max_bytes (страницы небольшие). Крупные файлы — через stream_to_file."""
+    with _open(url, referer, timeout) as r:
+        data = r.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError(f"ответ больше {max_bytes // (1024 * 1024)} МБ — пропуск")
+        return data, (r.headers.get_content_type() or "").lower(), r.geturl()
+
+
+def stream_to_file(url: str, dst: str, referer: str | None = None,
+                   timeout: int = HTTP_TIMEOUT, max_bytes: int = MAX_BYTES) -> tuple[str, str]:
+    """Качает URL НА ДИСК чанками (постоянная память ~CHUNK, а не файл целиком в RAM).
+    Возвращает (content_type, итоговый_url). Это ключ к низкому потреблению памяти."""
+    written = 0
+    with _open(url, referer, timeout) as r:
         ctype = (r.headers.get_content_type() or "").lower()
-        return data, ctype, r.geturl()
+        final = r.geturl()
+        with open(dst, "wb") as f:
+            while True:
+                chunk = r.read(CHUNK)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise ValueError(f"файл больше {max_bytes // (1024 * 1024)} МБ — пропуск")
+                f.write(chunk)
+    return ctype, final
 
 
 # ── 5. Распознавание формата картинки по сигнатуре ────────────────────────────
@@ -229,55 +260,80 @@ def sniff_image_ext(data: bytes) -> str | None:
     return None
 
 
-# ── 6. Сборка картинок в CBZ / PDF ────────────────────────────────────────────
-def _page_ext(name: str, data: bytes) -> str:
-    return sniff_image_ext(data) or (_ext_of(name) if _ext_of(name) in IMAGE_EXTS else ".jpg")
+def _sniff_file(path: str) -> str | None:
+    """Расширение картинки по первым байтам ФАЙЛА на диске (без чтения целиком)."""
+    try:
+        with open(path, "rb") as f:
+            return sniff_image_ext(f.read(16))
+    except OSError:
+        return None
 
 
-def save_cbz(images: list[tuple[str, bytes]], out_path: str) -> None:
-    """CBZ = ZIP с картинками 0001.ext, 0002.ext… Любой формат, без сторонних библиотек."""
-    if not images:
+# ── 6. Сборка картинок (с ДИСКА) в CBZ / PDF — низкое потребление памяти ─────────
+def _page_arcname(i: int, path: str) -> str:
+    ext = _sniff_file(path) or (_ext_of(path) if _ext_of(path) in IMAGE_EXTS else ".jpg")
+    return f"{i:04d}{ext}"
+
+
+def save_cbz(paths: list[str], out_path: str) -> None:
+    """CBZ = ZIP со страницами 0001.ext, 0002.ext… Каждая картинка СТРИМИТСЯ с диска
+    (zip.write), а не держится в памяти — любой формат, без сторонних библиотек."""
+    if not paths:
         raise ValueError("нет картинок для CBZ")
     tmp = out_path + ".part"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as z:
-        for i, (name, data) in enumerate(images, 1):
-            z.writestr(f"{i:04d}{_page_ext(name, data)}", data)
+        for i, p in enumerate(paths, 1):
+            z.write(p, _page_arcname(i, p))
     os.replace(tmp, out_path)
 
 
-def save_pdf(images: list[tuple[str, bytes]], out_path: str) -> None:
-    """Все картинки в один PDF (по странице на картинку). Через Pillow (любые форматы),
-    а если его нет — безбиблиотечной сборкой из JPEG."""
-    if not images:
+def save_pdf(paths: list[str], out_path: str) -> None:
+    """Все страницы (файлы на диске) в один PDF, по одной странице за раз (память ≈ одна
+    страница). JPEG встраивается без потерь (/DCTDecode); прочие форматы Pillow приводит
+    к JPEG на диске. Без Pillow умеет только JPEG-страницы (для остального — формат CBZ)."""
+    if not paths:
         raise ValueError("нет картинок для PDF")
-    tmp = out_path + ".part"
-    if not _save_pdf_pillow(images, tmp):
-        _save_pdf_jpeg_only(images, tmp)
-    os.replace(tmp, out_path)
-
-
-def _save_pdf_pillow(images: list[tuple[str, bytes]], out_path: str) -> bool:
-    """Сборка PDF через Pillow. False, если Pillow недоступен (тогда вызвать fallback)."""
+    tmpdir = tempfile.mkdtemp(prefix="pdfjpg_")
     try:
-        from PIL import Image
+        metas = _jpeg_pages_meta(_ensure_jpegs(paths, tmpdir))
+        if not metas:
+            raise RuntimeError(
+                "нет пригодных JPEG-страниц для PDF. Для PNG/WebP и т.п. нужен Pillow "
+                "(pip install Pillow) — либо выберите формат CBZ.")
+        tmp = out_path + ".part"
+        _write_pdf_from_jpegs(metas, tmp)
+        os.replace(tmp, out_path)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _ensure_jpegs(paths: list[str], tmpdir: str) -> list[str]:
+    """Каждую страницу приводим к JPEG НА ДИСКЕ (по одной за раз): JPEG берём как есть
+    (без потерь), прочее — через Pillow в RGB-JPEG. Без Pillow не-JPEG отбрасываются."""
+    Image = None
+    try:
+        from PIL import Image as _Image
+        Image = _Image
     except ImportError:
-        return False
-    pages = []
-    for _name, data in images:
+        pass
+    out: list[str] = []
+    for i, p in enumerate(paths, 1):
+        if _sniff_file(p) == ".jpg":
+            out.append(p)
+            continue
+        if Image is None:
+            continue
         try:
-            im = Image.open(io.BytesIO(data))
-            im.load()
+            im = Image.open(p)
+            if im.mode not in ("RGB", "L", "CMYK"):      # PDF не хранит альфу/палитру
+                im = im.convert("RGB")
+            jp = os.path.join(tmpdir, f"{i:04d}.jpg")
+            im.save(jp, "JPEG", quality=92)
+            im.close()
+            out.append(jp)
         except Exception:                                # noqa: BLE001 — битую страницу пропускаем
             continue
-        if im.mode in ("RGBA", "LA", "P"):               # PDF не хранит альфу — на белый фон
-            im = im.convert("RGB")
-        elif im.mode not in ("RGB", "L", "CMYK"):
-            im = im.convert("RGB")
-        pages.append(im)
-    if not pages:
-        raise ValueError("Pillow не смог открыть ни одной картинки для PDF")
-    pages[0].save(out_path, "PDF", save_all=True, append_images=pages[1:])
-    return True
+    return out
 
 
 def _jpeg_dimensions(data: bytes) -> tuple[int, int, int] | None:
@@ -303,63 +359,87 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int, int] | None:
     return None
 
 
-def _save_pdf_jpeg_only(images: list[tuple[str, bytes]], out_path: str) -> None:
-    """Безбиблиотечный PDF: каждый JPEG встраивается как есть (/DCTDecode, без потерь).
-    Не-JPEG страницы пропускаются — без Pillow их не сконвертировать (используйте CBZ)."""
-    pages = []
-    for _name, data in images:
+def _jpeg_pages_meta(paths: list[str]) -> list[tuple]:
+    """Для каждой JPEG-страницы вернуть (path, w, h, comps). Не-JPEG/битые отбрасываются.
+    Файлы читаются по одному (для разбора SOF), в памяти максимум одна страница."""
+    metas = []
+    for p in paths:
+        try:
+            with open(p, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
         if sniff_image_ext(data) != ".jpg":
             continue
         dim = _jpeg_dimensions(data)
         if dim:
-            pages.append((data, *dim))
-    if not pages:
-        raise RuntimeError(
-            "PDF без Pillow умеет только JPEG-страницы, а их нет. "
-            "Установите Pillow (pip install Pillow) или выберите формат CBZ.")
+            metas.append((p, *dim))
+    return metas
 
-    objs: list[bytes] = []
 
-    def add(body: bytes) -> int:
-        objs.append(body)
-        return len(objs)                                 # номер объекта (1-based)
+def _write_pdf_from_jpegs(metas: list[tuple], out_path: str) -> None:
+    """Пишет PDF ПОТОКОВО прямо в файл: каждый JPEG встраивается как есть (/DCTDecode,
+    без потерь), читаясь с диска по одной странице. Память ≈ одна страница, а не весь том.
 
-    cs = {1: "/DeviceGray", 3: "/DeviceRGB", 4: "/DeviceCMYK"}
+    Раскладка объектов: на страницу 3 (image+content+page), затем Pages и Catalog."""
+    n = len(metas)
+    pages_obj_num = n * 3 + 1
+    catalog_num = n * 3 + 2
+    offsets: list[int] = [0] * (catalog_num + 1)         # 1-based; [0] не используется
+    cs = {1: b"/DeviceGray", 3: b"/DeviceRGB", 4: b"/DeviceCMYK"}
     kids: list[int] = []
-    # На страницу — 3 объекта (image+content+page); объект Pages идёт сразу за ними.
-    pages_obj_num = len(pages) * 3 + 1
-    for data, w, h, comps in pages:
-        img_num = add(
-            b"<< /Type /XObject /Subtype /Image /Width %d /Height %d "
-            b"/ColorSpace %s /BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\n"
-            b"stream\n" % (w, h, cs.get(comps, "/DeviceRGB").encode(), len(data))
-            + data + b"\nendstream")
-        content = b"q\n%d 0 0 %d 0 0 cm\n/Im0 Do\nQ\n" % (w, h)
-        content_num = add(b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content))
-        page_num = add(
-            b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %d %d] "
-            b"/Resources << /XObject << /Im0 %d 0 R >> >> "
-            b"/Contents %d 0 R >>" % (pages_obj_num, w, h, img_num, content_num))
-        kids.append(page_num)
 
-    pages_num = add(b"<< /Type /Pages /Kids [%s] /Count %d >>" % (
-        b" ".join(b"%d 0 R" % k for k in kids), len(kids)))
-    catalog_num = add(b"<< /Type /Catalog /Pages %d 0 R >>" % pages_num)
-
-    buf = bytearray(b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for num, body in enumerate(objs, 1):
-        offsets.append(len(buf))
-        buf += b"%d 0 obj\n" % num + body + b"\nendobj\n"
-    xref_pos = len(buf)
-    buf += b"xref\n0 %d\n" % (len(objs) + 1)
-    buf += b"0000000000 65535 f \n"
-    for off in offsets[1:]:
-        buf += b"%010d 00000 n \n" % off
-    buf += (b"trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n"
-            % (len(objs) + 1, catalog_num, xref_pos))
     with open(out_path, "wb") as f:
-        f.write(buf)
+        pos = 0
+
+        def w(b: bytes) -> None:
+            nonlocal pos
+            f.write(b)
+            pos += len(b)
+
+        w(b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n")
+        obj = 0
+        for path, wid, hei, comps in metas:
+            with open(path, "rb") as g:
+                data = g.read()
+            obj += 1
+            offsets[obj] = pos
+            w(b"%d 0 obj\n<< /Type /XObject /Subtype /Image /Width %d /Height %d "
+              b"/ColorSpace %s /BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\n"
+              b"stream\n" % (obj, wid, hei, cs.get(comps, b"/DeviceRGB"), len(data)))
+            w(data)
+            w(b"\nendstream\nendobj\n")
+            img_num = obj
+
+            content = b"q\n%d 0 0 %d 0 0 cm\n/Im0 Do\nQ\n" % (wid, hei)
+            obj += 1
+            offsets[obj] = pos
+            w(b"%d 0 obj\n<< /Length %d >>\nstream\n" % (obj, len(content)))
+            w(content)
+            w(b"\nendstream\nendobj\n")
+            content_num = obj
+
+            obj += 1
+            offsets[obj] = pos
+            w(b"%d 0 obj\n<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %d %d] "
+              b"/Resources << /XObject << /Im0 %d 0 R >> >> /Contents %d 0 R >>\nendobj\n"
+              % (obj, pages_obj_num, wid, hei, img_num, content_num))
+            kids.append(obj)
+
+        offsets[pages_obj_num] = pos
+        w(b"%d 0 obj\n<< /Type /Pages /Kids [%s] /Count %d >>\nendobj\n"
+          % (pages_obj_num, b" ".join(b"%d 0 R" % k for k in kids), len(kids)))
+        offsets[catalog_num] = pos
+        w(b"%d 0 obj\n<< /Type /Catalog /Pages %d 0 R >>\nendobj\n"
+          % (catalog_num, pages_obj_num))
+
+        xref_pos = pos
+        w(b"xref\n0 %d\n" % (catalog_num + 1))
+        w(b"0000000000 65535 f \n")
+        for k in range(1, catalog_num + 1):
+            w(b"%010d 00000 n \n" % offsets[k])
+        w(b"trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n"
+          % (catalog_num + 1, catalog_num, xref_pos))
 
 
 # ── 7. Имена файлов ───────────────────────────────────────────────────────────
@@ -384,53 +464,60 @@ def out_path(out_dir: str, msg_id: int, label: str, ext: str) -> str:
 
 # ── 8. Обработка ссылок одного сообщения (синхронно; зовётся в asyncio.to_thread) ─
 def process_links_sync(msg_id: int, urls: list[str], out_dir: str, fmt: str,
-                       label: str = "", http=http_get,
-                       log=lambda *_a: None) -> dict:
+                       label: str = "", http=http_get, downloader=stream_to_file,
+                       workers: int = LINK_IMG_WORKERS, log=lambda *_a: None) -> dict:
     """Скачивает/собирает всё по ссылкам одного сообщения. Идемпотентно: если целевой
-    файл уже существует — пропускает (возобновляемость без БД). Возвращает счётчики
-    {'saved','skipped','failed'}. http/log внедряются для тестов."""
+    файл уже существует — пропускает (возобновляемость без БД). Картинки страницы качаются
+    НА ДИСК и ПАРАЛЛЕЛЬНО. Возвращает {'saved','skipped','failed'}. http/downloader/log
+    внедряются для тестов."""
     fmt = fmt if fmt in FORMATS else "cbz"
     res = {"saved": 0, "skipped": 0, "failed": 0}
-    images: list[tuple[str, bytes]] = []                 # прямые картинки → один комикс
+    loose_imgs: list[str] = []                           # прямые картинки-ссылки → один комикс
     first_url = urls[0] if urls else ""
 
     for url in urls:
         kind = classify_url(url)
         try:
             if kind == "file":
-                _save_direct_file(msg_id, url, out_dir, http, log, res)
+                _save_direct_file(msg_id, url, out_dir, downloader, log, res)
             elif kind == "image":
-                data, _ct, _fu = http(url)
-                images.append((url, data))
+                loose_imgs.append(url)
             else:  # page
-                _save_page_comic(msg_id, url, out_dir, fmt, http, log, res)
+                _save_page_comic(msg_id, url, out_dir, fmt, http, downloader, workers, log, res)
         except Exception as e:                            # noqa: BLE001 — одна ссылка не валит остальные
             res["failed"] += 1
             log(f"link msg {msg_id}: {url} → ошибка: {e}")
 
-    if images:
-        _assemble_comic(msg_id, images, out_dir, fmt,
-                        label or _filename_from_url(first_url), res, log)
+    if loose_imgs:
+        try:
+            _build_comic(msg_id, loose_imgs, out_dir, fmt,
+                         label or _filename_from_url(first_url), None,
+                         downloader, workers, res, log)
+        except Exception as e:                            # noqa: BLE001
+            res["failed"] += 1
+            log(f"link msg {msg_id}: сборка из картинок → ошибка: {e}")
     return res
 
 
-def _save_direct_file(msg_id, url, out_dir, http, log, res) -> None:
+def _save_direct_file(msg_id, url, out_dir, downloader, log, res) -> None:
     name = _filename_from_url(url)
     ext = _ext_of(url) or ".bin"
     dst = out_path(out_dir, msg_id, os.path.splitext(name)[0], ext)
     if os.path.exists(dst):
         res["skipped"] += 1
         return
-    data, _ct, _fu = http(url)
     tmp = dst + ".part"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, dst)
+    try:
+        downloader(url, tmp)                             # стрим на диск чанками
+        os.replace(tmp, dst)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
     res["saved"] += 1
-    log(f"link msg {msg_id}: файл сохранён {os.path.basename(dst)} ({len(data)} б)")
+    log(f"link msg {msg_id}: файл сохранён {os.path.basename(dst)}")
 
 
-def _save_page_comic(msg_id, url, out_dir, fmt, http, log, res) -> None:
+def _save_page_comic(msg_id, url, out_dir, fmt, http, downloader, workers, log, res) -> None:
     dst = out_path(out_dir, msg_id, _page_label(url), "." + fmt)
     if os.path.exists(dst):
         res["skipped"] += 1
@@ -439,13 +526,11 @@ def _save_page_comic(msg_id, url, out_dir, fmt, http, log, res) -> None:
     # Сама ссылка отдала картинку/файл (редирект) — это не HTML-страница.
     if "html" not in ctype and not ctype.startswith("text"):
         ext = sniff_image_ext(html)
-        if ext:
-            _assemble_comic(msg_id, [(final_url, html)], out_dir, fmt, _page_label(url),
-                            res, log)
+        target = out_path(out_dir, msg_id, _page_label(url), ext or _ext_of(final_url) or ".bin")
+        if os.path.exists(target):
+            res["skipped"] += 1
             return
-        # бинарь не-картинка → сохраняем как есть
-        _write_bytes(out_path(out_dir, msg_id, _page_label(url), _ext_of(final_url) or ".bin"),
-                     html)
+        _write_bytes(target, html)                       # одиночная картинка/файл — как есть
         res["saved"] += 1
         return
     img_urls = scrape_image_urls(_decode_html(html, ctype), final_url)
@@ -453,39 +538,69 @@ def _save_page_comic(msg_id, url, out_dir, fmt, http, log, res) -> None:
         res["skipped"] += 1
         log(f"link msg {msg_id}: на странице {url} картинок не найдено")
         return
-    images: list[tuple[str, bytes]] = []
-    for iu in img_urls:
-        try:
-            data, _ct, _fu = http(iu, referer=final_url)
-            if sniff_image_ext(data):
-                images.append((iu, data))
-        except Exception as e:                            # noqa: BLE001
-            log(f"link msg {msg_id}: картинка {iu} → {e}")
-    if not images:
-        res["failed"] += 1
-        return
-    _assemble_comic(msg_id, images, out_dir, fmt, _page_label(url), res, log)
+    _build_comic(msg_id, img_urls, out_dir, fmt, _page_label(url), final_url,
+                 downloader, workers, res, log)
 
 
-def _assemble_comic(msg_id, images, out_dir, fmt, label, res, log) -> None:
-    # Одиночная картинка — это не комикс: сохраняем самим файлом-картинкой.
-    if len(images) == 1 and fmt != "pdf":
-        name, data = images[0]
-        ext = sniff_image_ext(data) or ".jpg"
-        dst = out_path(out_dir, msg_id, label, ext)
-        if os.path.exists(dst):
-            res["skipped"] += 1
-            return
-        _write_bytes(dst, data)
-        res["saved"] += 1
-        return
+def _build_comic(msg_id, img_urls, out_dir, fmt, label, referer,
+                 downloader, workers, res, log) -> None:
+    """Качает все страницы параллельно НА ДИСК (во временную папку) и собирает в один
+    файл выбранного формата. Память не зависит от числа/размера страниц."""
     dst = out_path(out_dir, msg_id, label, "." + fmt)
     if os.path.exists(dst):
         res["skipped"] += 1
         return
-    (save_pdf if fmt == "pdf" else save_cbz)(images, dst)
-    res["saved"] += 1
-    log(f"link msg {msg_id}: комикс собран {os.path.basename(dst)} ({len(images)} стр.)")
+    tmpdir = tempfile.mkdtemp(prefix=".comic_", dir=out_dir)
+    try:
+        paths = _download_images(img_urls, tmpdir, referer, downloader, workers, log)
+        if not paths:
+            res["failed"] += 1
+            return
+        # Одиночная картинка — это не комикс: кладём файлом-картинкой (кроме явного PDF).
+        if len(paths) == 1 and fmt != "pdf":
+            single = out_path(out_dir, msg_id, label, _sniff_file(paths[0]) or ".jpg")
+            if os.path.exists(single):
+                res["skipped"] += 1
+                return
+            os.replace(paths[0], single)
+            res["saved"] += 1
+            return
+        (save_pdf if fmt == "pdf" else save_cbz)(paths, dst)
+        res["saved"] += 1
+        log(f"link msg {msg_id}: комикс собран {os.path.basename(dst)} ({len(paths)} стр.)")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _download_images(img_urls, tmpdir, referer, downloader, workers, log) -> list[str]:
+    """Параллельно качает картинки в tmpdir как 0001.ext, 0002.ext… (порядок страниц
+    сохраняется). Не-картинки и сбойные ссылки отбрасываются. Возвращает пути по порядку."""
+    def fetch(item):
+        i, url = item
+        part = os.path.join(tmpdir, f"{i:04d}.part")
+        try:
+            downloader(url, part, referer=referer)
+        except Exception as e:                            # noqa: BLE001
+            log(f"  страница {url} → {e}")
+            return None
+        ext = _sniff_file(part)
+        if ext is None:                                   # сервер отдал не картинку
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+            return None
+        final = os.path.join(tmpdir, f"{i:04d}{ext}")
+        os.replace(part, final)
+        return (i, final)
+
+    got: list[tuple[int, str]] = []
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+        for r in ex.map(fetch, list(enumerate(img_urls, 1))):
+            if r is not None:
+                got.append(r)
+    got.sort(key=lambda t: t[0])
+    return [p for _i, p in got]
 
 
 def _write_bytes(dst: str, data: bytes) -> None:
@@ -543,8 +658,8 @@ async def run_link_phase(app, chat_id, dest, fmt, reporter, stop_event,
                 totals["messages"] += 1
                 label = _message_label(m)
                 res = await asyncio.to_thread(
-                    process_links_sync, m.id, urls, out_dir, fmt, label,
-                    http_get, log)
+                    lambda mid=m.id, u=urls, lab=label:
+                    process_links_sync(mid, u, out_dir, fmt, label=lab, log=log))
                 for k in ("saved", "skipped", "failed"):
                     totals[k] += res[k]
                 if totals["saved"] and totals["saved"] % 5 == 0:

@@ -23,8 +23,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QGroupBox, QHBoxLayout, QLabel, QSizePolicy, QSpinBox,
-    QVBoxLayout, QWidget,
+    QApplication, QFrame, QGroupBox, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
+    QSpinBox, QVBoxLayout, QWidget,
 )
 
 # ── hard layout rules (mandatory for every form) ────────────────────────────────
@@ -366,6 +366,36 @@ def page_layout(widget: QWidget) -> QVBoxLayout:
     lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
     lay.setSpacing(SPACING)
     return lay
+
+
+def scroll_page(widget: QWidget) -> "tuple[QVBoxLayout, QVBoxLayout]":
+    """Scrollable page scaffold — content scrolls instead of compressing when the
+    window is too small. Returns (content_layout, outer_layout):
+
+      • content_layout — add the scrolling sections here (MARGIN/SPACING applied);
+      • outer_layout   — the widget's root; add PINNED rows (e.g. an action bar)
+        AFTER the scroll area so they stay visible while the content scrolls.
+
+    Horizontal scrolling is disabled (content wraps to the viewport width); the
+    vertical bar appears only when the content is taller than the viewport."""
+    outer = QVBoxLayout(widget)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(0)
+
+    scroll = QScrollArea()
+    scroll.setObjectName("pageScroll")
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+    inner = QWidget()
+    inner.setObjectName("pageScrollInner")
+    content = QVBoxLayout(inner)
+    content.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
+    content.setSpacing(SPACING)
+    scroll.setWidget(inner)
+    outer.addWidget(scroll, 1)
+    return content, outer
 
 
 def section(title: str) -> "tuple[QGroupBox, QVBoxLayout]":

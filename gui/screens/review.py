@@ -41,7 +41,7 @@ class ReviewScreen(QWidget):
         super().__init__(parent)
         # Screen safety floor (anti-collapse): props up minimumSizeHint of the
         # QStackedWidget so the review table and button row don't drift off-screen.
-        self.setMinimumSize(850, 650)
+        self.setMinimumSize(760, 480)
         self._bulk_update = False   # bulk fill: don't recompute the counter per item
         self._need_files = 0        # from preview: how many already in the plan
         self._summary_mode = "idle"  # idle | scanning | error | loaded
