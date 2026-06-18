@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QIntValidator
+from PySide6.QtGui import QColor, QIntValidator, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
@@ -105,25 +105,24 @@ class LoginScreen(QWidget):
         actions.setSpacing(theme.SPACING)
         self.save_btn = QPushButton()
         self.save_btn.clicked.connect(self._on_save)
+        self.qr_login_btn = QPushButton()
+        self.qr_login_btn.clicked.connect(self._on_login_qr)
         self.login_btn = QPushButton()
         self.login_btn.setProperty("primary", True)
         self.login_btn.setDefault(True)
         self.login_btn.clicked.connect(self._on_login)
         actions.addWidget(self.save_btn)
         actions.addStretch(1)
+        actions.addWidget(self.qr_login_btn)
         actions.addWidget(self.login_btn)
         root.addLayout(actions)
 
-        # ── code / 2FA confirmation block (hidden until a code is sent) ──
+        # ── code confirmation block (shown when a code is sent) ──
         self.auth_box = QFrame()
         self.auth_box.setFrameShape(QFrame.StyledPanel)
         ab = QVBoxLayout(self.auth_box)
         self.code = QLineEdit()
         self.code.returnPressed.connect(self._on_confirm_code)
-        self.password = QLineEdit()
-        self.password.setEchoMode(QLineEdit.Password)
-        self.password.returnPressed.connect(self._on_confirm_password)
-        self.password.hide()
         code_row = QHBoxLayout()
         self.confirm_btn = QPushButton()
         self.confirm_btn.clicked.connect(self._on_confirm_code)
@@ -136,9 +135,50 @@ class LoginScreen(QWidget):
         code_row.addWidget(self.resend_btn)
         code_row.addWidget(self.cancel_btn)
         ab.addLayout(code_row)
-        ab.addWidget(self.password)
         self.auth_box.hide()
         root.addWidget(self.auth_box)
+
+        # ── QR sign-in block (shown during a QR login) ──
+        self.qr_box = QFrame()
+        self.qr_box.setFrameShape(QFrame.StyledPanel)
+        qb = QVBoxLayout(self.qr_box)
+        self.qr_hint = QLabel()
+        self.qr_hint.setWordWrap(True)
+        self.qr_image = QLabel()
+        self.qr_image.setAlignment(Qt.AlignCenter)
+        self.qr_image.setMinimumSize(300, 300)
+        # White card so the QR always scans, even in the dark theme.
+        self.qr_image.setStyleSheet("background:#FFFFFF; border-radius:8px; padding:12px;")
+        self.qr_cancel_btn = QPushButton()
+        self.qr_cancel_btn.clicked.connect(self._ctl.cancel_login)
+        qr_btn_row = QHBoxLayout()
+        qr_btn_row.addStretch(1)
+        qr_btn_row.addWidget(self.qr_cancel_btn)
+        qr_btn_row.addStretch(1)
+        qb.addWidget(self.qr_hint)
+        qb.addWidget(self.qr_image, 0, Qt.AlignCenter)
+        qb.addLayout(qr_btn_row)
+        self.qr_box.hide()
+        root.addWidget(self.qr_box)
+
+        # ── shared 2FA password block (used by both code and QR logins) ──
+        self.pw_box = QFrame()
+        self.pw_box.setFrameShape(QFrame.StyledPanel)
+        pb = QVBoxLayout(self.pw_box)
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.Password)
+        self.password.returnPressed.connect(self._on_confirm_password)
+        pw_row = QHBoxLayout()
+        self.confirm_pw_btn = QPushButton()
+        self.confirm_pw_btn.clicked.connect(self._on_confirm_password)
+        self.cancel_pw_btn = QPushButton()
+        self.cancel_pw_btn.clicked.connect(self._ctl.cancel_login)
+        pw_row.addWidget(self.password, 1)
+        pw_row.addWidget(self.confirm_pw_btn)
+        pw_row.addWidget(self.cancel_pw_btn)
+        pb.addLayout(pw_row)
+        self.pw_box.hide()
+        root.addWidget(self.pw_box)
 
         root.addStretch(1)
         self.status = QLabel("")
@@ -164,11 +204,16 @@ class LoginScreen(QWidget):
         self.lbl_dest.setText(t("lbl_dest"))
         self.save_btn.setText(t("btn_save"))
         self.login_btn.setText(t("btn_login"))
+        self.qr_login_btn.setText(t("btn_login_qr"))
         self.code.setPlaceholderText(t("ph_code"))
         self.password.setPlaceholderText(t("ph_password"))
         self.confirm_btn.setText(t("btn_confirm"))
         self.resend_btn.setText(t("btn_resend"))
         self.cancel_btn.setText(t("btn_cancel"))
+        self.qr_hint.setText(t("qr_hint"))
+        self.qr_cancel_btn.setText(t("btn_cancel"))
+        self.confirm_pw_btn.setText(t("btn_confirm"))
+        self.cancel_pw_btn.setText(t("btn_cancel"))
         if self.volumes.count():
             self.volumes.setItemText(0, t("volumes_placeholder"))
 
@@ -238,6 +283,15 @@ class LoginScreen(QWidget):
         self._info(t("msg_connecting"))
         self._ctl.login(cfg)
 
+    def _on_login_qr(self) -> None:
+        cfg = self._on_save()  # QR login also needs a complete, saved configuration
+        if cfg is None:
+            return
+        self._cfg = cfg
+        self._set_login_busy(True)
+        self._info(t("msg_qr_generating"))
+        self._ctl.login_qr(cfg)
+
     def _on_confirm_code(self) -> None:
         code = self.code.text().strip()
         if code:
@@ -250,42 +304,90 @@ class LoginScreen(QWidget):
 
     def _wire_controller(self) -> None:
         self._ctl.login_code_sent.connect(self._on_code_sent)
+        self._ctl.login_qr_ready.connect(self._on_qr_ready)
         self._ctl.login_need_password.connect(self._on_need_password)
         self._ctl.login_ok.connect(self._on_login_ok)
         self._ctl.login_failed.connect(self._on_login_failed)
         self._ctl.login_cancelled.connect(self._on_login_cancelled)
 
+    def _hide_auth_boxes(self) -> None:
+        self.auth_box.hide()
+        self.qr_box.hide()
+        self.pw_box.hide()
+
     def _on_code_sent(self, descr: str) -> None:
+        self.qr_box.hide()
+        self.pw_box.hide()
         self.auth_box.show()
-        self.password.hide()
         self.code.setFocus()
         self._info(t("msg_code_sent", descr=descr))
 
+    def _on_qr_ready(self, url: str) -> None:
+        self.auth_box.hide()
+        self.pw_box.hide()
+        self.qr_image.setPixmap(self._qr_pixmap(url))
+        self.qr_box.show()
+        self._info(t("msg_qr_wait"))
+
     def _on_need_password(self) -> None:
-        self.password.show()
+        self.auth_box.hide()
+        self.qr_box.hide()
+        self.pw_box.show()
         self.password.setFocus()
         self._info(t("msg_need_password"))
 
     def _on_login_ok(self, greet: str) -> None:
         self._set_login_busy(False)
-        self.auth_box.hide()
+        self._hide_auth_boxes()
         self._info(t("msg_login_ok", greet=greet))
         self.done.emit(self._cfg)
 
     def _on_login_failed(self, message: str) -> None:
-        # A wrong code/password is not necessarily fatal — keep the code form visible
-        # and show the text non-modally (a modal on every wrong code would annoy).
-        if not self.auth_box.isVisible():
+        # A wrong code/password is recoverable — keep its input box up and show the
+        # text non-modally. Any other failure (e.g. while the QR is shown) is terminal:
+        # reset the form so the user can retry.
+        recoverable = self.auth_box.isVisible() or self.pw_box.isVisible()
+        if not recoverable:
             self._set_login_busy(False)
+            self.qr_box.hide()
         self._error(message)
 
     def _on_login_cancelled(self) -> None:
         self._set_login_busy(False)
-        self.auth_box.hide()
+        self._hide_auth_boxes()
         self._info(t("msg_login_cancelled"))
+
+    @staticmethod
+    def _qr_pixmap(url: str, target: int = 300) -> QPixmap:
+        """Render the tg://login token URL as a crisp black/white QR QPixmap.
+
+        Built from the QR matrix with QPainter (no Pillow dependency); nearest-neighbour
+        square modules keep the code sharp and reliably scannable.
+        """
+        import qrcode
+
+        qr = qrcode.QRCode(border=2)
+        qr.add_data(url)
+        qr.make(fit=True)
+        matrix = qr.get_matrix()
+        modules = len(matrix)
+        scale = max(2, target // modules)
+        size = modules * scale
+        pm = QPixmap(size, size)
+        pm.fill(QColor("white"))
+        painter = QPainter(pm)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("black"))
+        for y, row in enumerate(matrix):
+            for x, filled in enumerate(row):
+                if filled:
+                    painter.drawRect(x * scale, y * scale, scale, scale)
+        painter.end()
+        return pm
 
     def _set_login_busy(self, busy: bool) -> None:
         self.login_btn.setEnabled(not busy)
+        self.qr_login_btn.setEnabled(not busy)
         for w in (self.api_id, self.api_hash, self.phone, self.channel, self.dest):
             w.setReadOnly(busy)
 

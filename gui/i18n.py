@@ -106,6 +106,7 @@ _EN = {
     "volumes_placeholder": "Volumes…",
     "btn_save": "Save",
     "btn_login": "Sign in to Telegram",
+    "btn_login_qr": "Sign in with QR code",
     "ph_code": "code from Telegram / SMS",
     "ph_password": "cloud password (2FA)",
     "btn_confirm": "Confirm",
@@ -120,6 +121,11 @@ _EN = {
     "msg_need_password": "2FA is enabled — enter your cloud password.",
     "msg_login_ok": "✅ Signed in: {greet}",
     "msg_login_cancelled": "Login cancelled.",
+    "msg_qr_generating": "Generating QR code…",
+    "msg_qr_wait": ("Scan the QR with Telegram on your phone — no code to type. "
+                    "It refreshes on its own; just scan the current one."),
+    "qr_hint": ("Open Telegram on your phone → Settings → Devices → “Link Desktop "
+                "Device” and point the camera at the QR below."),
     # Where Telegram delivered the login code (shown after "Code sent — ").
     "delivery_app": ("into your Telegram app — open Telegram on another device "
                      "(phone/desktop) and read the login code there. It does NOT arrive "
@@ -357,6 +363,7 @@ _RU = {
     "volumes_placeholder": "Тома…",
     "btn_save": "Сохранить",
     "btn_login": "Войти в Telegram",
+    "btn_login_qr": "Войти по QR-коду",
     "ph_code": "код из Telegram / SMS",
     "ph_password": "облачный пароль (2FA)",
     "btn_confirm": "Подтвердить",
@@ -371,6 +378,11 @@ _RU = {
     "msg_need_password": "Включена 2FA — введите облачный пароль.",
     "msg_login_ok": "✅ Вход выполнен: {greet}",
     "msg_login_cancelled": "Логин отменён.",
+    "msg_qr_generating": "Создаю QR-код…",
+    "msg_qr_wait": ("Отсканируйте QR в Telegram на телефоне — код вводить не нужно. "
+                    "QR обновляется сам, сканируйте текущий."),
+    "qr_hint": ("Откройте Telegram на телефоне → Настройки → Устройства → «Подключить "
+                "устройство» и наведите камеру на QR ниже."),
     # Куда Telegram отправил код (показывается после «Код отправлен — »).
     "delivery_app": ("в приложение Telegram — откройте Telegram на другом устройстве "
                      "(телефон/десктоп) и посмотрите код для входа там. По SMS он НЕ "

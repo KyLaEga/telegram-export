@@ -43,6 +43,7 @@ class EngineController(QObject):
     login_ok = Signal(str)          # успешный вход; строка-приветствие (имя/username/id)
     login_failed = Signal(str)      # ошибка логина (текст для показа)
     login_cancelled = Signal()
+    login_qr_ready = Signal(str)    # QR-вход: tg://login?token=… для отрисовки QR-кода
 
     DRAIN_HZ = 20
 
@@ -119,6 +120,8 @@ class EngineController(QObject):
             self.login_failed.emit(value)
         elif kind == "cancelled":
             self.login_cancelled.emit()
+        elif kind == "qr":
+            self.login_qr_ready.emit(value)
 
     # ── публичный API заданий ───────────────────────────────────────────────
     @property
@@ -174,6 +177,11 @@ class EngineController(QObject):
         """Подключиться и при необходимости запросить код. Идемпотентно: если сессия
         уже авторизована — сразу login_ok."""
         self._spawn(self._auth(cfg))
+
+    def login_qr(self, cfg: dict) -> None:
+        """Войти по QR-коду (auth.exportLoginToken). Пользователь сканирует QR уже
+        залогиненным официальным Telegram. Идемпотентно, как и login()."""
+        self._spawn(self._auth_qr(cfg))
 
     def submit_code(self, code: str) -> None:
         self._put_auth(("code", code))
@@ -286,6 +294,137 @@ class EngineController(QObject):
                 await app.disconnect()
             except Exception:
                 pass
+
+    # ── QR-логин (auth.exportLoginToken / importLoginToken) ─────────────────
+    async def _auth_qr(self, cfg: dict) -> None:
+        import base64
+
+        from pyrogram import Client, raw
+        from pyrogram.errors import SessionPasswordNeeded
+        from .i18n import t
+
+        self._auth_inbox = asyncio.Queue()
+        inbox = self._auth_inbox
+        app = Client(em.SESSION_NAME, api_id=cfg["api_id"], api_hash=cfg["api_hash"],
+                     workdir=em.DATA_DIR)
+        try:
+            await app.connect()
+            # Уже авторизованы? Тогда QR не нужен.
+            try:
+                me = await app.get_me()
+                self._q.put(("__login__", ("ok", self._greet(me))))
+                return
+            except Exception:
+                pass  # не авторизованы — показываем QR
+
+            while True:
+                try:
+                    r = await app.invoke(raw.functions.auth.ExportLoginToken(
+                        api_id=cfg["api_id"], api_hash=cfg["api_hash"], except_ids=[]))
+                except SessionPasswordNeeded:
+                    if not await self._qr_handle_2fa(app, inbox):
+                        self._q.put(("__login__", ("cancelled", None)))
+                        return
+                    break
+
+                if isinstance(r, raw.types.auth.LoginToken):
+                    url = ("tg://login?token="
+                           + base64.urlsafe_b64encode(r.token).decode().rstrip("="))
+                    self._q.put(("__login__", ("qr", url)))
+                    if await self._qr_wait(app, inbox, r.expires) == "cancel":
+                        self._q.put(("__login__", ("cancelled", None)))
+                        return
+                    continue  # отсканировали ИЛИ QR истёк — перевыпускаем
+
+                if isinstance(r, raw.types.auth.LoginTokenMigrateTo):
+                    await self._qr_switch_dc(app, r.dc_id)
+                    try:
+                        r = await app.invoke(
+                            raw.functions.auth.ImportLoginToken(token=r.token))
+                    except SessionPasswordNeeded:
+                        if not await self._qr_handle_2fa(app, inbox):
+                            self._q.put(("__login__", ("cancelled", None)))
+                            return
+                        break
+
+                if isinstance(r, raw.types.auth.LoginTokenSuccess):
+                    user = r.authorization.user
+                    await app.storage.user_id(user.id)
+                    await app.storage.is_bot(False)
+                    break
+
+            me = await app.get_me()
+            self._q.put(("__login__", ("ok", self._greet(me))))
+        except Exception as e:  # noqa: BLE001
+            self._q.put(("__login__", ("error", t("login_conn_fail", err=e))))
+        finally:
+            self._auth_inbox = None
+            try:
+                await app.disconnect()
+            except Exception:
+                pass
+
+    async def _qr_wait(self, app, inbox, deadline: int) -> str:
+        """Ждать подтверждения скана (updateLoginToken), отмены пользователем или
+        истечения QR. Возвращает 'scanned' | 'expired' | 'cancel'."""
+        import time
+
+        from pyrogram import raw
+
+        updates = app.dispatcher.updates_queue
+        while True:
+            timeout = deadline - time.time()
+            if timeout <= 0:
+                return "expired"
+            upd_task = asyncio.ensure_future(updates.get())
+            inbox_task = asyncio.ensure_future(inbox.get())
+            done, pending = await asyncio.wait(
+                {upd_task, inbox_task}, timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            if not done:
+                return "expired"  # QR истёк — перевыпуск
+            if inbox_task in done:
+                action = inbox_task.result()[0]
+                if action == "cancel":
+                    return "cancel"
+                continue  # прочий ввод в QR-режиме игнорируем
+            item = upd_task.result()
+            update = item[0] if isinstance(item, tuple) else item
+            if isinstance(update, raw.types.UpdateLoginToken):
+                return "scanned"
+            # любой другой апдейт — продолжаем ждать
+
+    async def _qr_handle_2fa(self, app, inbox) -> bool:
+        """Запросить облачный пароль и проверить его. True — вошли, False — отмена."""
+        from .i18n import t
+
+        self._q.put(("__login__", ("need_password", None)))
+        while True:
+            action, value = await inbox.get()
+            if action == "cancel":
+                return False
+            if action == "password":
+                try:
+                    await app.check_password(value)
+                    return True
+                except Exception as e:  # noqa: BLE001
+                    self._q.put(("__login__", ("error", t("login_bad_password", err=e))))
+            # прочий ввод игнорируем, ждём пароль/отмену
+
+    @staticmethod
+    async def _qr_switch_dc(app, dc_id: int) -> None:
+        """Переключиться на домашний DC аккаунта (как send_code при миграции)."""
+        from pyrogram.session import Auth, Session
+
+        await app.session.stop()
+        await app.storage.dc_id(dc_id)
+        await app.storage.auth_key(
+            await Auth(app, dc_id, await app.storage.test_mode()).create())
+        app.session = Session(app, dc_id, await app.storage.auth_key(),
+                              await app.storage.test_mode())
+        await app.session.start()
 
     @staticmethod
     def _greet(me) -> str:

@@ -11,7 +11,7 @@
 [tool.briefcase]
 project_name = "Telegram Export"
 bundle = "com.telegramexport"
-version = "0.3.3"
+version = "0.4.0"
 url = "https://github.com/KyLaEga/telegram-export"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -57,6 +57,8 @@ requires = [
     # bundle a locally-built pure-Python wheel (see wheelhouse/, committed).
     "wheelhouse/pyaes-1.6.1-py3-none-any.whl",
     "PySocks==1.7.1",
+    # QR login: pure-Python QR matrix (rendered with QPainter, no Pillow needed).
+    "qrcode==8.2",
 ]
 
 [tool.briefcase.app.telegram-export.macOS]
