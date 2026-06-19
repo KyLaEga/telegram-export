@@ -371,6 +371,25 @@ def test_link_export() -> None:
           "временные папки сборки удалены")
 
 
+# ── 10. Локализация сообщений движка (EN/RU паритет + переключение) ──────────────
+def test_engine_i18n() -> None:
+    print("test_engine_i18n")
+    import export_media as em
+
+    bad = [k for k, v in em._ENGINE_MSGS.items()
+           if not isinstance(v, tuple) or len(v) != 2 or not v[0] or not v[1]]
+    check(not bad, f"у каждого ключа есть RU и EN (проблемных: {len(bad)})")
+
+    em.set_ui_language("en")
+    check(em._t("all_media_done").startswith("✅ All"), "EN: статус движка на английском")
+    check("GB" in em._t("ssd_free", gb=10.0), "EN: подстановка форматирования работает")
+    em.set_ui_language("ru")
+    check(em._t("all_media_done").startswith("✅ Всё"), "RU: статус движка на русском")
+    check(em._t("___missing___") == "___missing___", "неизвестный ключ → сам ключ")
+    em.set_ui_language("xx")
+    check(em.UI_LANG == "ru", "неизвестный язык → откат на ru")
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv)
@@ -384,6 +403,7 @@ def main() -> int:
     test_theme_toggle(app)
     test_data_dir()
     test_link_export()
+    test_engine_i18n()
 
     print()
     if _FAILURES:

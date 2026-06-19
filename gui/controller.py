@@ -128,12 +128,19 @@ class EngineController(QObject):
     def busy(self) -> bool:
         return self._busy
 
+    def _sync_engine_language(self) -> None:
+        """Статусы движка (лог дашборда) должны идти на языке интерфейса."""
+        from .i18n import translator
+        em.set_ui_language(translator.current_lang)
+
     def scan(self, cfg: dict, options: "em.Options") -> bool:
+        self._sync_engine_language()
         return self._submit(
             "scan",
             lambda se: em.scan_preview(cfg, options, reporter=self._reporter, stop_event=se))
 
     def start_export(self, cfg: dict, options: "em.Options") -> bool:
+        self._sync_engine_language()
         return self._submit(
             "run",
             lambda se: em.run_export(cfg, options, reporter=self._reporter,

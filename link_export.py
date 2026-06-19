@@ -641,60 +641,126 @@ def _decode_html(data: bytes, ctype: str) -> str:
         return data.decode("utf-8", errors="replace")
 
 
+LINK_STATE_FILE = ".link_state.json"
+
+
+def _load_link_state(out_dir: str) -> tuple[int, set]:
+    """Возвращает (last_id, failed_ids). last_id — водяной знак: до него история уже
+    обработана, поэтому повторные прогоны читают только НОВЫЕ сообщения."""
+    import json
+    try:
+        with open(os.path.join(out_dir, LINK_STATE_FILE), encoding="utf-8") as f:
+            d = json.load(f)
+        return int(d.get("last_id", 0)), set(d.get("failed", []))
+    except (OSError, ValueError):
+        return 0, set()
+
+
+def _save_link_state(out_dir: str, last_id: int, failed: set) -> None:
+    import json
+    tmp = os.path.join(out_dir, LINK_STATE_FILE + ".part")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"last_id": int(last_id), "failed": sorted(failed)}, f)
+        os.replace(tmp, os.path.join(out_dir, LINK_STATE_FILE))
+    except OSError:
+        pass
+
+
 # ── 9. Фаза скачивания по ссылкам (зовётся движком из run_export) ──────────────
 async def run_link_phase(app, chat_id, dest, fmt, reporter, stop_event,
-                         log=lambda *_a: None) -> dict:
-    """Проходит историю канала, в каждом сообщении ищет ссылки и качает/собирает их
-    в dest/comics_and_links. Сетевые операции уносятся в поток (asyncio.to_thread),
-    чтобы не блокировать event-loop pyrogram. Возвращает сводку счётчиков."""
+                         log=lambda *_a: None, t=None) -> dict:
+    """Качает комиксы/файлы по ссылкам в dest/comics_and_links. ИНКРЕМЕНТАЛЬНО: помнит
+    водяной знак (последний обработанный msg_id) и при повторном запуске читает только
+    новые сообщения + повторяет ранее сбойные. Сеть уносится в поток (asyncio.to_thread),
+    чтобы не блокировать event-loop. t — переводчик статусов (язык интерфейса)."""
     from pyrogram.errors import FloodWait
 
+    try:
+        from export_media import get_messages_retry
+    except Exception:                                    # noqa: BLE001 — fallback без FloodWait-ретрая
+        async def get_messages_retry(a, c, ids):
+            r = await a.get_messages(c, ids)
+            return r if isinstance(r, list) else [r]
+    if t is None:                                        # автономный вызов/тесты — берём из движка
+        try:
+            from export_media import _t as t
+        except Exception:                                # noqa: BLE001
+            t = lambda k, **kw: k                         # noqa: E731 — крайний фолбэк
     out_dir = os.path.join(dest, LINK_SUBDIR)
     os.makedirs(out_dir, exist_ok=True)
     fmt = fmt if fmt in FORMATS else "cbz"
     totals = {"messages": 0, "saved": 0, "skipped": 0, "failed": 0}
+    last_id, failed = _load_link_state(out_dir)
 
-    reporter.status(f"\n🔗 Скачиваю комиксы и файлы по ссылкам (формат комиксов: "
-                    f"{fmt.upper()}) → {LINK_SUBDIR}/")
+    reporter.status(t("link_start", fmt=fmt.upper(), dir=LINK_SUBDIR))
+    if last_id:
+        reporter.status(t("link_scan_inc", since=last_id))
 
-    offset_id = 0
-    while True:
-        if stop_event is not None and stop_event.is_set():
-            break
+    def stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    async def handle(m) -> None:
+        urls = extract_links(m)
+        if not urls:
+            return
+        totals["messages"] += 1
+        res = await asyncio.to_thread(
+            lambda mid=m.id, u=urls, lab=_message_label(m):
+            process_links_sync(mid, u, out_dir, fmt, label=lab, log=log))
+        for k in ("saved", "skipped", "failed"):
+            totals[k] += res[k]
+        (failed.add if res["failed"] else failed.discard)(m.id)
+        if totals["saved"] and totals["saved"] % 5 == 0:
+            reporter.status_inline(t("link_progress", saved=totals["saved"],
+                                     skip=totals["skipped"], fail=totals["failed"]))
+
+    # ── новые сообщения (id > last_id), новейшие → старые, ранний выход у водяного знака ──
+    max_seen, completed, offset_id = last_id, False, 0
+    while not stopped() and not completed:
         got = 0
         try:
             async for m in app.get_chat_history(chat_id, offset_id=offset_id):
                 offset_id = m.id
                 got += 1
-                if stop_event is not None and stop_event.is_set():
+                if m.id <= last_id:
+                    completed = True
                     break
-                urls = extract_links(m)
-                if not urls:
-                    continue
-                totals["messages"] += 1
-                label = _message_label(m)
-                res = await asyncio.to_thread(
-                    lambda mid=m.id, u=urls, lab=label:
-                    process_links_sync(mid, u, out_dir, fmt, label=lab, log=log))
-                for k in ("saved", "skipped", "failed"):
-                    totals[k] += res[k]
-                if totals["saved"] and totals["saved"] % 5 == 0:
-                    reporter.status_inline(
-                        f"\r   ссылок обработано: сохранено {totals['saved']}, "
-                        f"пропущено {totals['skipped']}, ошибок {totals['failed']}…")
+                if stopped():
+                    break
+                max_seen = max(max_seen, m.id)
+                await handle(m)
         except FloodWait as e:
             w = int(getattr(e, "value", 0) or 0)
-            reporter.status(f"\n⏳ FloodWait при чтении истории: ждём {w} c…")
+            reporter.status(t("link_flood", w=w))
             await asyncio.sleep(w + 1)
             continue
         if got == 0:
-            break
+            completed = True
+
+    # ── повтор ранее сбойных сообщений (по id; skip-if-exists делает успех дешёвым) ──
+    if failed and not stopped():
+        for chunk in (sorted(failed)[i:i + 190] for i in range(0, len(failed), 190)):
+            if stopped():
+                break
+            try:
+                msgs = await get_messages_retry(app, chat_id, chunk)
+            except Exception:                            # noqa: BLE001
+                continue
+            for m in msgs:
+                if m is None or getattr(m, "empty", False):
+                    failed.discard(getattr(m, "id", 0))
+                    continue
+                if stopped():
+                    break
+                await handle(m)
+
+    # Водяной знак двигаем только если скан НЕ прервали — иначе пропустили бы хвост.
+    _save_link_state(out_dir, max_seen if (completed and not stopped()) else last_id, failed)
 
     reporter.status_clear()
-    reporter.status(
-        f"🔗 Ссылки готовы: новых сохранено {totals['saved']}, уже было "
-        f"{totals['skipped']}, ошибок {totals['failed']} "
-        f"(сообщений со ссылками: {totals['messages']}).")
+    reporter.status(t("link_done", saved=totals["saved"], skip=totals["skipped"],
+                      fail=totals["failed"], msgs=totals["messages"]))
     return totals
 
 

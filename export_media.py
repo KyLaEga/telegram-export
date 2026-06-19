@@ -160,6 +160,111 @@ FFMPEG_STATE = {"missing": False}          # кэш: ffmpeg не найден �
 FASTSTART = True                           # постобработка видео под Apple Quick Look (--no-faststart выкл.)
 # ──────────────────────────────────────────────────────────────────────────────
 
+# ── Локализация сообщений ДВИЖКА (то, что видно в логе дашборда / в CLI) ───────
+# CLI исторически русский → дефолт "ru". GUI выставляет язык интерфейса через
+# set_ui_language() перед запуском задания, чтобы статусы движка совпадали с UI.
+UI_LANG = "ru"
+
+# key → (ru, en). Покрываем нормальный ход прогона и фазу ссылок (самое видимое).
+_ENGINE_MSGS = {
+    "ssd_free":      ("💽 Свободно на SSD: {gb:.1f} ГБ", "💽 Free space on SSD: {gb:.1f} GB"),
+    "ssd_fs":        ("🗂  Файловая система SSD: {fs}", "🗂  SSD filesystem: {fs}"),
+    "fat_warn":      ("⚠️  FAT32 — файлы крупнее 4 ГБ записать НЕ получится! Лучше exFAT/APFS.",
+                      "⚠️  FAT32 — files larger than 4 GB can't be written! Prefer exFAT/APFS."),
+    "settings":      ("⚙️  Воркеров: {w} | многопоток: {fast} | дедуп: {dd} | "
+                      "резолюция качества: {q}{flt}\n",
+                      "⚙️  Workers: {w} | multi-thread: {fast} | dedup: {dd} | "
+                      "quality resolution: {q}{flt}\n"),
+    "on":            ("вкл", "on"),
+    "off":           ("выкл", "off"),
+    "fast_on":       ("вкл ({c} соед./файл)", "on ({c} conn./file)"),
+    "filter_only":   ("только {kinds}", "only {kinds}"),
+    "filter_skip":   ("кроме {kinds}", "except {kinds}"),
+    "filter_pfx":    (" | фильтр: {flt}", " | filter: {flt}"),
+    "conn_warn":     ("⚠️  Суммарно {w}×{c} = {tot} соединений к DC. На лимитируемом аккаунте это "
+                      "рвёт сокеты (Broken pipe) и не ускоряет скачивание. Рекомендую: "
+                      "--connections 4 --workers 1.\n",
+                      "⚠️  {w}×{c} = {tot} connections to the DC total. On a rate-limited account "
+                      "this breaks sockets (Broken pipe) without speeding things up. Suggested: "
+                      "--connections 4 --workers 1.\n"),
+    "opened":        ("📡 Открыт: {title} (id={id})", "📡 Opened: {title} (id={id})"),
+    "dest":          ("💾 Назначение: {dest}\n", "💾 Destination: {dest}\n"),
+    "rescan":        ("🧹 --rescan: индекс БД очищен. Скан истории с нуля…\n",
+                      "🧹 --rescan: DB index cleared. Scanning history from scratch…\n"),
+    "index_found":   ("🗃  Индекс ID найден ({n} шт). Дочитываю новые (id>{since})…",
+                      "🗃  ID index found ({n}). Reading new ones (id>{since})…"),
+    "new_total":     ("   Новых сообщений: {new}. Всего: {total}.\n",
+                      "   New messages: {new}. Total: {total}.\n"),
+    "full_scan":     ("🔎 Полное сканирование истории канала…",
+                      "🔎 Full channel-history scan…"),
+    "total_msgs":    ("   Всего сообщений: {n}.\n", "   Total messages: {n}.\n"),
+    "stop_scan":     ("⛔ Остановка получена при сканировании — выходим, индекс сохранён.",
+                      "⛔ Stop received during scan — exiting, index saved."),
+    "recovered":     ("🛟 Восстановлено с диска в download_state.db: +{n} готовых файл(ов) — "
+                      "перекачивать их не нужно.",
+                      "🛟 Recovered from disk into download_state.db: +{n} finished file(s) — "
+                      "no need to re-download them."),
+    "analyzing":     ("📊 Анализирую, что нужно скачать…", "📊 Analyzing what needs downloading…"),
+    "meta_ready":    ("   метаданные готовы (взяты при сканировании истории).",
+                      "   metadata ready (collected during history scan)."),
+    "meta_missing":  ("   В кэше {n} сообщений без метаданных — быстро дочитываю историю канала…",
+                      "   {n} cached messages without metadata — quickly re-reading history…"),
+    "meta_collected": ("   метаданные собраны: медиа {n}.", "   metadata collected: media {n}."),
+    "quality_res":   ("🏆 Резолюция качества: исключено худших версий-дубликатов {losers} "
+                      "(мастеров к обработке: {masters}). Подробности → quality_report.txt",
+                      "🏆 Quality resolution: excluded {losers} worse duplicate version(s) "
+                      "(masters to process: {masters}). Details → quality_report.txt"),
+    "preview_sep":   ("─" * 70, "─" * 70),
+    "preview_hdr":   ("📋 ПРЕДПРОСМОТР ЭКСПОРТА", "📋 EXPORT PREVIEW"),
+    "preview_total": ("   Всего медиафайлов в канале : {n}  ({gb:.2f} ГБ)",
+                      "   Media files in the channel  : {n}  ({gb:.2f} GB)"),
+    "preview_have":  ("   Уже на диске               : {have}", "   Already on disk             : {have}"),
+    "preview_dup":   (" | дубликатов: {dup}", " | duplicates: {dup}"),
+    "preview_need":  ("   📥 К ЗАГРУЗКЕ               : {n} файлов, {gb:.2f} ГБ",
+                      "   📥 TO DOWNLOAD              : {n} files, {gb:.2f} GB"),
+    "all_media_done": ("✅ Всё прикреплённое медиа уже скачано — новых файлов нет.",
+                       "✅ All attached media already downloaded — nothing new."),
+    "done":          ("\n✅ Готово. {summary}", "\n✅ Done. {summary}"),
+    "done_summary":  ("скачано: {dl} ({gb:.2f} ГБ), уже было: {sk}, докачано/починено: {rep}, "
+                      "дубликатов: {dd}, ошибок: {fail}.",
+                      "downloaded: {dl} ({gb:.2f} GB), already had: {sk}, resumed/repaired: {rep}, "
+                      "duplicates: {dd}, errors: {fail}."),
+    "done_links":    (" Ссылки: +{saved} (уже было {skip}, ошибок {fail}).",
+                      " Links: +{saved} (already had {skip}, errors {fail})."),
+    "stopped_early": ("⚠️  Остановлено досрочно (сигнал/диск/ошибка). Перезапуск продолжит с места.",
+                      "⚠️  Stopped early (signal/disk/error). Restart resumes from where it left off."),
+    "link_err":      ("⚠️  Фаза ссылок прервана ошибкой: {err}",
+                      "⚠️  Link phase aborted by an error: {err}"),
+    # ── фаза ссылок/комиксов ──
+    "link_start":    ("\n🔗 Скачиваю комиксы и файлы по ссылкам (формат комиксов: {fmt}) → {dir}/",
+                      "\n🔗 Downloading comics and files from links (comic format: {fmt}) → {dir}/"),
+    "link_scan_inc": ("   Дочитываю новые сообщения для ссылок (id>{since})…",
+                      "   Reading new messages for links (id>{since})…"),
+    "link_progress": ("\r   ссылок обработано: сохранено {saved}, пропущено {skip}, ошибок {fail}…",
+                      "\r   links processed: saved {saved}, skipped {skip}, errors {fail}…"),
+    "link_flood":    ("\n⏳ FloodWait при чтении истории: ждём {w} c…",
+                      "\n⏳ FloodWait while reading history: waiting {w} s…"),
+    "link_done":     ("🔗 Ссылки готовы: новых сохранено {saved}, уже было {skip}, ошибок {fail} "
+                      "(сообщений со ссылками: {msgs}).",
+                      "🔗 Links done: newly saved {saved}, already had {skip}, errors {fail} "
+                      "(messages with links: {msgs})."),
+}
+
+
+def set_ui_language(lang: str) -> None:
+    """GUI зовёт это перед заданием, чтобы статусы движка шли на языке интерфейса."""
+    global UI_LANG
+    UI_LANG = lang if lang in ("en", "ru") else "ru"
+
+
+def _t(key: str, **kw) -> str:
+    pair = _ENGINE_MSGS.get(key)
+    if pair is None:
+        return key
+    s = pair[1] if UI_LANG == "en" else pair[0]
+    return s.format(**kw) if kw else s
+# ──────────────────────────────────────────────────────────────────────────────
+
 
 def human_mb(n: int) -> float:
     return n / (1024 * 1024)
@@ -1287,13 +1392,12 @@ async def build_plan(app, chat_id, msg_ids, allow_kinds, skip_kinds, dest,
         # Старый кэш id без метаданных: добираем БЫСТРЫМ проходом по истории
         # (get_chat_history → messages.GetHistory), а НЕ через channels.GetMessages,
         # который ловит 30-секундные FloodWait. Один проход наполняет media/analyzed.
-        REPORTER.status(f"   В кэше {len(to_fetch)} сообщений без метаданных — "
-                        f"быстро дочитываю историю канала…")
+        REPORTER.status(_t("meta_missing", n=len(to_fetch)))
         await collect_message_ids(app, chat_id, media, analyzed)
         db_save_meta(conn, sorted(analyzed), media)
-        REPORTER.status(f"   метаданные собраны: медиа {len(media)}.")
+        REPORTER.status(_t("meta_collected", n=len(media)))
     else:
-        REPORTER.status("   метаданные готовы (взяты при сканировании истории).")
+        REPORTER.status(_t("meta_ready"))
 
     items: list[Item] = []
     for mid in msg_ids:
@@ -1918,30 +2022,28 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         f"force_include={len(force_include)} preview_only={options.preview_only}")
 
     free = shutil.disk_usage(dest).free
-    REPORTER.status(f"💽 Свободно на SSD: {human_gb(free):.1f} ГБ")
+    REPORTER.status(_t("ssd_free", gb=human_gb(free)))
     fs = detect_fs(dest)
     if fs:
-        REPORTER.status(f"🗂  Файловая система SSD: {fs}")
+        REPORTER.status(_t("ssd_fs", fs=fs))
         if "FAT" in fs.upper() and "EXFAT" not in fs.upper():
-            REPORTER.status("⚠️  FAT32 — файлы крупнее 4 ГБ записать НЕ получится! Лучше exFAT/APFS.")
+            REPORTER.status(_t("fat_warn"))
 
     flt = []
     if allow_kinds:
-        flt.append(f"только {','.join(sorted(allow_kinds))}")
+        flt.append(_t("filter_only", kinds=",".join(sorted(allow_kinds))))
     if skip_kinds:
-        flt.append(f"кроме {','.join(sorted(skip_kinds))}")
-    fast_str = f"вкл ({connections} соед./файл)" if use_fast else "выкл"
-    REPORTER.status(f"⚙️  Воркеров: {workers} | многопоток: {fast_str} | "
-                    f"дедуп: {'вкл' if use_dedup else 'выкл'} | "
-                    f"резолюция качества: {'вкл' if use_quality else 'выкл'}"
-                    + (f" | фильтр: {'; '.join(flt)}" if flt else "") + "\n")
+        flt.append(_t("filter_skip", kinds=",".join(sorted(skip_kinds))))
+    fast_str = _t("fast_on", c=connections) if use_fast else _t("off")
+    on, off = _t("on"), _t("off")
+    REPORTER.status(_t("settings", w=workers, fast=fast_str,
+                       dd=on if use_dedup else off, q=on if use_quality else off,
+                       flt=_t("filter_pfx", flt="; ".join(flt)) if flt else ""))
     # Аккаунт лимитируется (~5 МБ/с): много одновременных соединений к одному DC
     # провоцируют сброс сокетов сервером («socket.send() raised exception» / Broken pipe),
     # а не ускоряют загрузку. Подсказываем щадящий режим, если суммарная нагрузка велика.
     if use_fast and workers * connections > 6:
-        REPORTER.status(f"⚠️  Суммарно {workers}×{connections} = {workers * connections} соединений к "
-                        f"DC. На лимитируемом аккаунте это рвёт сокеты (Broken pipe) и не ускоряет "
-                        f"скачивание. Рекомендую: --connections 4 --workers 1.\n")
+        REPORTER.status(_t("conn_warn", w=workers, c=connections, tot=workers * connections))
 
     # Локальная БД индекса/метаданных (SQLite) — заменяет прежние JSON-кэши.
     conn = db_connect(dest)
@@ -1956,12 +2058,12 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
       async with app:
         chat = await app.get_chat(cfg["channel"])
         CHAT_ID = chat.id
-        REPORTER.status(f"📡 Открыт: {getattr(chat, 'title', cfg['channel'])} (id={chat.id})")
-        REPORTER.status(f"💾 Назначение: {dest}\n")
+        REPORTER.status(_t("opened", title=getattr(chat, "title", cfg["channel"]), id=chat.id))
+        REPORTER.status(_t("dest", dest=dest))
 
         if rescan:
             db_reset(conn)
-            REPORTER.status("🧹 --rescan: индекс БД очищен. Скан истории с нуля…\n")
+            REPORTER.status(_t("rescan"))
 
         meta = db_load_meta(conn)
         analyzed: set[int] = set(meta.get("analyzed", []))
@@ -1970,14 +2072,14 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         cached = sorted(analyzed)                     # индекс ID берём из index.db
         if cached:
             since = max(cached)
-            REPORTER.status(f"🗃  Индекс ID найден ({len(cached)} шт). Дочитываю новые (id>{since})…")
+            REPORTER.status(_t("index_found", n=len(cached), since=since))
             new = await collect_new_ids(app, chat.id, since, media, analyzed)
             msg_ids = sorted(set(cached) | set(new))
-            REPORTER.status(f"   Новых сообщений: {len(new)}. Всего: {len(msg_ids)}.\n")
+            REPORTER.status(_t("new_total", new=len(new), total=len(msg_ids)))
         else:
-            REPORTER.status("🔎 Полное сканирование истории канала…")
+            REPORTER.status(_t("full_scan"))
             msg_ids = await collect_message_ids(app, chat.id, media, analyzed)
-            REPORTER.status(f"   Всего сообщений: {len(msg_ids)}.\n")
+            REPORTER.status(_t("total_msgs", n=len(msg_ids)))
         db_save_meta(conn, sorted(analyzed), media)
 
         # ── FREQUENCY ANALYZER (Динамический Guard, pre-flight) ──
@@ -1993,7 +2095,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
             log(f"DYNAMIC_GENERIC {len(DYNAMIC_GENERIC)}: {sample}")
 
         if stop_event.is_set():
-            REPORTER.status("⛔ Остановка получена при сканировании — выходим, индекс сохранён.")
+            REPORTER.status(_t("stop_scan"))
             return result
 
         # ФУНКЦИЯ-СПАСАТЕЛЬ (Disk Source of Truth): ДО плана сверяем диск с бессмертной БД
@@ -2003,12 +2105,11 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         # --rescan, так что прогресс бессмертен.
         recovered = recover_state_from_disk(conn, dest, media)
         if recovered:
-            REPORTER.status(f"🛟 Восстановлено с диска в download_state.db: +{recovered} "
-                            f"готовых файл(ов) — перекачивать их не нужно.")
+            REPORTER.status(_t("recovered", n=recovered))
             log(f"RECOVER +{recovered} from disk")
 
         # ── ПРЕДПРОСМОТР ──
-        REPORTER.status("📊 Анализирую, что нужно скачать…")
+        REPORTER.status(_t("analyzing"))
         items = await build_plan(app, chat.id, msg_ids, allow_kinds, skip_kinds,
                                  dest, media, analyzed, conn)
 
@@ -2020,9 +2121,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         if use_quality:
             items, losers = resolve_quality(items, dest, force_include=force_include)
             if losers:
-                REPORTER.status(f"🏆 Резолюция качества: исключено худших версий-дубликатов "
-                                f"{len(losers)} (мастеров к обработке: {len(items)}). "
-                                f"Подробности → quality_report.txt")
+                REPORTER.status(_t("quality_res", losers=len(losers), masters=len(items)))
                 log(f"QUALITY masters={len(items)} losers={len(losers)}")
 
         # ── РЕЖИМ АУДИТА (--verify): только чтение, без скачивания ──
@@ -2046,14 +2145,12 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         result["preview"] = preview
         REPORTER.plan_preview(preview)
 
-        REPORTER.status("─" * 70)
-        REPORTER.status("📋 ПРЕДПРОСМОТР ЭКСПОРТА")
-        REPORTER.status(f"   Всего медиафайлов в канале : {s['total_files']}  "
-                        f"({human_gb(s['total_size']):.2f} ГБ)")
-        REPORTER.status(f"   Уже на диске               : {s['have_files']}"
-                        + (f" | дубликатов: {s['dup_files']}" if use_dedup else ""))
-        REPORTER.status(f"   📥 К ЗАГРУЗКЕ               : {s['need_files']} файлов, "
-                        f"{human_gb(s['need_size']):.2f} ГБ")
+        REPORTER.status(_t("preview_sep"))
+        REPORTER.status(_t("preview_hdr"))
+        REPORTER.status(_t("preview_total", n=s["total_files"], gb=human_gb(s["total_size"])))
+        REPORTER.status(_t("preview_have", have=s["have_files"])
+                        + (_t("preview_dup", dup=s["dup_files"]) if use_dedup else ""))
+        REPORTER.status(_t("preview_need", n=s["need_files"], gb=human_gb(s["need_size"])))
         if s["need_size"]:
             REPORTER.status(f"   ⏱  Оценка времени:")
             REPORTER.status(f"        • средняя 850 КБ/с (1 поток) : ~{fmt_duration(preview['eta_avg'])}")
@@ -2072,7 +2169,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         stats = Stats()
         # ── Загрузка прикреплённого медиа (если оно ещё не на диске) ──
         if s["need_files"] == 0:
-            REPORTER.status("✅ Всё прикреплённое медиа уже скачано — новых файлов нет.")
+            REPORTER.status(_t("all_media_done"))
         else:
             REPORTER.status("")
             mlock = asyncio.Lock()
@@ -2113,24 +2210,21 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
             try:
                 import link_export
                 result["link_stats"] = await link_export.run_link_phase(
-                    app, chat.id, dest, options.link_format, REPORTER, stop_event, log)
+                    app, chat.id, dest, options.link_format, REPORTER, stop_event, log, _t)
             except Exception as e:                       # noqa: BLE001 — фаза ссылок не валит экспорт
                 log_error(0, f"link phase error: {e}")
-                REPORTER.status(f"⚠️  Фаза ссылок прервана ошибкой: {e}")
+                REPORTER.status(_t("link_err", err=e))
 
-        summary = (f"скачано: {stats.downloaded} ({human_gb(stats.bytes_done):.2f} ГБ), "
-                   f"уже было: {stats.skipped}, докачано/починено: {stats.repaired}, "
-                   f"дубликатов: {stats.dedup}, ошибок: {stats.failed}.")
+        summary = _t("done_summary", dl=stats.downloaded, gb=human_gb(stats.bytes_done),
+                     sk=stats.skipped, rep=stats.repaired, dd=stats.dedup, fail=stats.failed)
         ls = result.get("link_stats")
         if ls:
-            summary += (f" Ссылки: +{ls['saved']} (уже было {ls['skipped']}, "
-                        f"ошибок {ls['failed']}).")
-        REPORTER.status(f"\n✅ Готово. {summary}")
+            summary += _t("done_links", saved=ls["saved"], skip=ls["skipped"], fail=ls["failed"])
+        REPORTER.status(_t("done", summary=summary))
         REPORTER.finished(summary, stop_event.is_set())
         log(f"=== DONE {summary}")
         if stop_event.is_set():
-            REPORTER.status("⚠️  Остановлено досрочно (сигнал/диск/ошибка). "
-                            "Перезапуск продолжит с места.")
+            REPORTER.status(_t("stopped_early"))
         result["stats"] = vars(stats)
         result["stopped"] = stop_event.is_set()
     finally:
