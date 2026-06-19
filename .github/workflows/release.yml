@@ -24,6 +24,33 @@ jobs:
       - run: python -m pip install --upgrade pip briefcase
       - run: python -m briefcase create macOS --no-input
       - run: python -m briefcase build macOS --no-input
+      - name: Trim unused Qt modules (app is pure QtWidgets — needs only Core/Gui/Widgets/DBus)
+        # The app imports only QtCore/QtGui/QtWidgets; QtGui hard-links QtDBus on macOS, so
+        # those four frameworks are the entire dependency closure (verified locally with
+        # `otool -L`). Everything else PySide6-Essentials ships — QML/Quick, Designer, the
+        # virtual-keyboard/TUIO input plugins that drag in the whole QML stack, sqldrivers,
+        # translations — is dead weight. Removing it cuts the bundle ~30% before thinning.
+        run: |
+          APP="build/telegram-export/macos/app/Telegram Export.app"
+          PYS="$APP/Contents/Resources/app_packages/PySide6"; QT="$PYS/Qt"; QTLIB="$QT/lib"
+          before=$(du -sh "$APP" | cut -f1)
+          for fw in "$QTLIB"/*.framework; do
+            case "$(basename "$fw" .framework)" in
+              QtCore|QtGui|QtWidgets|QtDBus) ;; *) rm -rf "$fw";;
+            esac
+          done
+          for so in "$PYS"/Qt*.abi3.so; do
+            case "$(basename "$so" | cut -d. -f1)" in
+              QtCore|QtGui|QtWidgets) ;; *) n=$(basename "$so" | cut -d. -f1); rm -f "$so" "$PYS/$n.pyi";;
+            esac
+          done
+          rm -rf "$QT/qml" "$QT/translations" "$QT/metatypes"
+          for d in platforminputcontexts generic sqldrivers qmltooling designer \
+                   qmllint networkinformation tls iconengines; do
+            rm -rf "$QT/plugins/$d"
+          done
+          rm -f "$QT/plugins/imageformats/libqpdf.dylib" "$QT/plugins/imageformats/libqsvg.dylib"
+          echo "Qt trim: $before -> $(du -sh "$APP" | cut -f1)"
       - name: Thin universal2 → arm64 (ARM-only build halves PySide6 size)
         run: |
           APP="build/telegram-export/macos/app/Telegram Export.app"
