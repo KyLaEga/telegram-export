@@ -21,7 +21,8 @@ index.db
 logs/
 export_log.txt
 error_export.log
-unknown_errors.txt          # Pyrogram runtime error dump (per-account, not for sharing)
+# Pyrogram runtime error dump (per-account, not for sharing)
+unknown_errors.txt
 *_report.txt
 
 # Python
