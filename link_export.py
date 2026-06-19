@@ -31,10 +31,12 @@ import asyncio
 import os
 import re
 import shutil
+import ssl
 import struct
 import tempfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -202,13 +204,27 @@ def scrape_image_urls(html: str, base_url: str) -> list[str]:
 
 
 # ── 4. HTTP ───────────────────────────────────────────────────────────────────
+@lru_cache(maxsize=1)
+def _ssl_context() -> "ssl.SSLContext":
+    """SSL-контекст с доверенными корнями. В упакованном приложении (Briefcase) у
+    встроенного Python НЕТ системных CA-сертификатов, и любой https-запрос падает с
+    CERTIFICATE_VERIFY_FAILED. certifi даёт переносимый набор корней; без него —
+    стандартный контекст (работает при запуске из исходников)."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:                                    # noqa: BLE001 — нет certifi → системные корни
+        return ssl.create_default_context()
+
+
 def _open(url: str, referer: str | None, timeout: int):
     """Открыть HTTP(S)-поток с нашим User-Agent (иначе часть сайтов отдаёт 403) и без
     gzip (Accept-Encoding: identity — чтобы не распаковывать в памяти)."""
     headers = {"User-Agent": _UA, "Accept": "*/*", "Accept-Encoding": "identity"}
     if referer:
         headers["Referer"] = referer
-    return urlopen(Request(url, headers=headers), timeout=timeout)   # noqa: S310 — схема проверена
+    return urlopen(Request(url, headers=headers), timeout=timeout,  # noqa: S310 — схема проверена
+                   context=_ssl_context())
 
 
 def http_get(url: str, referer: str | None = None, timeout: int = HTTP_TIMEOUT,

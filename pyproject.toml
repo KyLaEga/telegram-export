@@ -37,6 +37,7 @@ sources = [
     "export_media.py",
     "uploader.py",
     "fast_download.py",
+    "link_export.py",
 ]
 test_sources = [
     "tests",
@@ -64,6 +65,10 @@ requires = [
     # Python, CBZ still works and PDF falls back to a built-in JPEG-only writer, so the
     # feature degrades gracefully rather than breaking the build's import path.
     "Pillow==12.2.0",
+    # CA roots for the https link downloads: the bundled Python has no system trust store,
+    # so without certifi every https request fails CERTIFICATE_VERIFY_FAILED (pure-python,
+    # py3-none-any wheel — safe on every platform). See link_export._ssl_context.
+    "certifi==2026.05.20",
 ]
 
 [tool.briefcase.app.telegram-export.macOS]
