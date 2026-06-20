@@ -20,11 +20,11 @@ colours (PRIMARY/SUCCESS/…) are theme-independent and safe to inline.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPalette
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGroupBox, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
-    QSpinBox, QVBoxLayout, QWidget,
+    QSlider, QSpinBox, QVBoxLayout, QWidget,
 )
 
 # ── hard layout rules (mandatory for every form) ────────────────────────────────
@@ -296,6 +296,27 @@ QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
 QScrollBar::handle:horizontal {{ background: {p['scroll_handle']}; border-radius: 5px; min-width: 30px; }}
 QScrollBar::handle:horizontal:hover {{ background: {p['scroll_handle_hover']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+
+/* Sliders — clearly draggable: filled track up to the handle + a big round knob. */
+QSlider::groove:horizontal {{ height: 6px; background: {p['input_bg']};
+    border: 1px solid {p['border']}; border-radius: 3px; }}
+QSlider::sub-page:horizontal {{ background: {PRIMARY}; border-radius: 3px; }}
+QSlider::add-page:horizontal {{ background: {p['input_bg']};
+    border: 1px solid {p['border']}; border-radius: 3px; }}
+QSlider::handle:horizontal {{ background: #ffffff; border: 3px solid {PRIMARY};
+    width: 16px; height: 16px; margin: -8px 0; border-radius: 11px; }}
+QSlider::handle:horizontal:hover {{ background: {PRIMARY}; }}
+QSlider::handle:horizontal:pressed {{ background: {PRIMARY}; }}
+QSlider:disabled::sub-page:horizontal {{ background: {p['border']}; }}
+QSlider:disabled::handle:horizontal {{ border-color: {p['border']};
+    background: {p['btn_disabled_bg']}; }}
+
+/* Live value chip shown next to a slider. */
+QLabel#valChip {{ background: {PRIMARY}; color: #ffffff; font-weight: 800;
+    font-size: 15px; border-radius: 6px; padding: 3px 12px; min-width: 18px; }}
+QLabel#valChip:disabled {{ background: {p['btn_disabled_bg']}; color: {p['btn_disabled_text']}; }}
+QLabel#sliderEnd {{ color: {p['muted']}; font-size: 11px; }}
+QLabel#sliderEnd:disabled {{ color: {p['btn_disabled_text']}; }}
 """
 
 
@@ -414,6 +435,64 @@ def make_spinbox() -> QSpinBox:
     sp.setMinimumHeight(32)
     sp.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
     return sp
+
+
+class SliderField(QWidget):
+    """An obvious, draggable numeric control: a styled slider with tick marks, a big
+    live value chip, and min/max endpoint captions. Drop-in for a QSpinBox — exposes
+    value()/setValue()/setRange()/valueChanged and dims its children when disabled."""
+
+    valueChanged = Signal(int)
+
+    def __init__(self, minimum: int, maximum: int, value: int, parent=None) -> None:
+        super().__init__(parent)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(minimum, maximum)
+        self.slider.setValue(value)
+        self.slider.setSingleStep(1)
+        self.slider.setPageStep(1)
+        self.slider.setTickPosition(QSlider.TicksBelow)
+        self.slider.setTickInterval(1)
+        self.slider.setMinimumHeight(26)
+        self.slider.setCursor(Qt.PointingHandCursor)
+
+        self.chip = QLabel(str(value))
+        self.chip.setObjectName("valChip")
+        self.chip.setAlignment(Qt.AlignCenter)
+
+        self._lo = QLabel(str(minimum)); self._lo.setObjectName("sliderEnd")
+        self._hi = QLabel(str(maximum)); self._hi.setObjectName("sliderEnd")
+
+        top = QHBoxLayout(); top.setContentsMargins(0, 0, 0, 0); top.setSpacing(SPACING)
+        top.addWidget(self.slider, 1)
+        top.addWidget(self.chip, 0)
+        ends = QHBoxLayout(); ends.setContentsMargins(2, 0, 2, 0); ends.setSpacing(0)
+        ends.addWidget(self._lo, 0); ends.addStretch(1); ends.addWidget(self._hi, 0)
+        lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(2)
+        lay.addLayout(top)
+        lay.addLayout(ends)
+
+        self.slider.valueChanged.connect(self._on_changed)
+
+    def _on_changed(self, v: int) -> None:
+        self.chip.setText(str(v))
+        self.valueChanged.emit(v)
+
+    def value(self) -> int:
+        return self.slider.value()
+
+    def setValue(self, v: int) -> None:
+        self.slider.setValue(v)
+
+    def setRange(self, a: int, b: int) -> None:
+        self.slider.setRange(a, b)
+        self._lo.setText(str(a))
+        self._hi.setText(str(b))
+
+    def setToolTip(self, text: str) -> None:                # show on the interactive parts too
+        super().setToolTip(text)
+        self.slider.setToolTip(text)
+        self.chip.setToolTip(text)
 
 
 def title_label(text: str) -> QLabel:

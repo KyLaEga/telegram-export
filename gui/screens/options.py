@@ -16,9 +16,9 @@ while the engine is busy scanning/starting.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget,
 )
 
 import export_media as em
@@ -105,46 +105,34 @@ class OptionsScreen(QWidget):
         root.addWidget(self.links_box)
 
         # ── Threads & speed (parallelism) ──
-        # No height limits on the group or the form — the container freely grows
-        # downward when long labels wrap.
+        # Sliders (not spinboxes): a draggable handle + live value chip + a min→max
+        # scale make it obvious what to set and that it's interactive.
         self.perf_box, perf_lay = theme.section(t("sec_threads"))
-        form = QFormLayout()
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(theme.SPACING)
-        # Guaranteed vertical gap between rows: a label and the next row's spinbox
-        # cannot physically overlap even when the caption wraps to 2 lines.
-        form.setVerticalSpacing(18)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.setRowWrapPolicy(QFormLayout.DontWrapRows)
-        form.setLabelAlignment(Qt.AlignLeft)
 
         self.cb_fast = QCheckBox()
         self.cb_fast.setChecked(True)
         self.cb_fast.toggled.connect(self._on_fast_toggled)
+        perf_lay.addWidget(self.cb_fast)
 
-        # Spinboxes with hard minimum sizes (theme.make_spinbox): Qt can't squash
-        # them to a point — digits and arrows stay visible.
-        self.sp_workers = theme.make_spinbox()
-        self.sp_workers.setRange(1, 8)
-        self.sp_workers.setValue(1)
-        self.sp_workers.valueChanged.connect(self._refresh_warning)
-
-        self.sp_connections = theme.make_spinbox()
-        self.sp_connections.setRange(1, 16)
-        self.sp_connections.setValue(4)   # see tg-downloader-tuning: account caps ~5 MB/s
-        self.sp_connections.valueChanged.connect(self._refresh_warning)
-
-        # Explicit wrapping QLabels instead of QFormLayout auto-labels — long user
-        # wording isn't clipped by the window edge (anti-clipping).
+        # Workers: how many files at once (1…8).
         self.lbl_workers = QLabel()
         self.lbl_workers.setWordWrap(True)
+        self.lbl_workers.setStyleSheet("font-weight: 600;")
+        self.sp_workers = theme.SliderField(1, 8, 1)
+        self.sp_workers.valueChanged.connect(self._refresh_warning)
+        perf_lay.addWidget(self.lbl_workers)
+        perf_lay.addWidget(self.sp_workers)
+
+        perf_lay.addSpacing(8)
+
+        # Connections per file (1…16), only meaningful with multi-threaded download on.
         self.lbl_conns = QLabel()
         self.lbl_conns.setWordWrap(True)
-
-        perf_lay.addWidget(self.cb_fast)
-        form.addRow(self.lbl_workers, self.sp_workers)
-        form.addRow(self.lbl_conns, self.sp_connections)
-        perf_lay.addLayout(form)
+        self.lbl_conns.setStyleSheet("font-weight: 600;")
+        self.sp_connections = theme.SliderField(1, 16, 4)  # tg-downloader-tuning: account caps ~5 MB/s
+        self.sp_connections.valueChanged.connect(self._refresh_warning)
+        perf_lay.addWidget(self.lbl_conns)
+        perf_lay.addWidget(self.sp_connections)
 
         # Interactive total-DC-load banner.
         self.warning = theme.WarningBanner()

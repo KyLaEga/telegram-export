@@ -92,10 +92,17 @@ def test_options_build(app) -> None:
         check(o3.use_dedup and o3.use_quality,
               "download_all=✓ → build_options даёт dedup+quality True")
 
-        # Спинбоксы получили минимальную высоту (анти-клиппинг).
-        check(scr.sp_workers.minimumHeight() >= 30 and
-              scr.sp_connections.minimumHeight() >= 30,
-              "спинбоксы: minimumHeight ≥ 30")
+        # Слайдеры потоков: value()/setValue работают и значение зажато в диапазон.
+        scr.sp_workers.setValue(5)
+        check(scr.sp_workers.value() == 5, "слайдер воркеров: setValue/value")
+        scr.sp_workers.setValue(99)
+        check(scr.sp_workers.value() == 8, "слайдер воркеров: значение зажато по максимуму (8)")
+        check(scr.build_options().workers == 8, "build_options берёт значение слайдера")
+        scr.sp_workers.setValue(1)
+        # Снятие «многопоток» гасит слайдер соединений.
+        scr.cb_fast.setChecked(False)
+        check(not scr.sp_connections.isEnabled(), "fast=✗ → слайдер соединений заблокирован")
+        scr.cb_fast.setChecked(True)
 
         # Ссылки/комиксы: дефолт выкл, формат-комбо заблокировано до включения.
         od = scr.build_options()
