@@ -78,7 +78,7 @@ class ReportsScreen(QWidget):
         self.dest_box, dest_lay = theme.section(t("sec_dest"))
         self.dest_lbl = QLabel("—")
         self.dest_lbl.setWordWrap(True)
-        self.dest_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.dest_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.dest_lbl.setStyleSheet(
             "font-family:'SF Mono','Menlo','Courier New',monospace;font-size:11px;")
         dest_lay.addWidget(self.dest_lbl)

@@ -28,7 +28,6 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
 
 
 def describe(sent) -> str:
-    t = type(sent.type).__name__ if sent.type else "?"
     name = str(sent.type).split(".")[-1] if sent.type else "?"
     nxt = str(sent.next_type).split(".")[-1] if sent.next_type else "нет"
     return f"способ доставки: {name}; следующий доступный: {nxt}"

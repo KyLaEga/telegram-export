@@ -64,14 +64,14 @@ class UploadScreen(QWidget):
         form.setContentsMargins(0, 0, 0, 0)
         form.setHorizontalSpacing(theme.SPACING)
         form.setVerticalSpacing(theme.SPACING)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.setRowWrapPolicy(QFormLayout.DontWrapRows)
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.folder = QLineEdit()
-        self.folder.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.folder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.browse_btn = QPushButton()
-        self.browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.browse_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.browse_btn.clicked.connect(self._browse)
         folder_row = QHBoxLayout()
         folder_row.setContentsMargins(0, 0, 0, 0)
@@ -79,11 +79,11 @@ class UploadScreen(QWidget):
         folder_row.addWidget(self.folder, 1)
         folder_row.addWidget(self.browse_btn, 0)
         folder_box = QWidget()
-        folder_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        folder_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         folder_box.setLayout(folder_row)
 
         self.target = QLineEdit()
-        self.target.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.target.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.lbl_folder = QLabel()
         self.lbl_target = QLabel()
@@ -109,7 +109,7 @@ class UploadScreen(QWidget):
         self.status_lbl = QLabel(t("up_idle"))
         self.status_lbl.setStyleSheet("font-weight: 600;")
         self.status_lbl.setWordWrap(True)
-        self.status_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.status_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         prog_lay.addWidget(self.status_lbl)
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
@@ -292,4 +292,4 @@ class UploadScreen(QWidget):
 
     def _append(self, line: str) -> None:
         self.log.appendPlainText(line)
-        self.log.moveCursor(QTextCursor.End)
+        self.log.moveCursor(QTextCursor.MoveOperation.End)

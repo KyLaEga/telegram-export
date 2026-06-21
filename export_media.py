@@ -624,10 +624,12 @@ def reset_config() -> None:
 # Базы подключены через ATTACH (state.*) к одному соединению — это даёт кросс-БД JOIN для
 # дедупа без второго подключения, но при этом DELETE при --rescan бьёт ТОЛЬКО по messages.
 def db_connect(dest):
-    conn = sqlite3.connect(os.path.join(dest, DB_NAME))
+    conn = sqlite3.connect(os.path.join(dest, DB_NAME), timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")     # переживёт обрыв/жёсткую остановку
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA mmap_size=268435456")
+    conn.execute("PRAGMA cache_size=-10000")
     # Бессмертная БД скачанного — отдельный файл, подключаем как схему `state`.
     conn.execute("ATTACH DATABASE ? AS state", (os.path.join(dest, STATE_DB_NAME),))
     conn.execute("PRAGMA state.journal_mode=WAL")
@@ -736,7 +738,7 @@ def master_size_ok(path, rec) -> bool:
         return False
     sz = os.path.getsize(path)
     final = (rec["final_size"] or 0) if "final_size" in rec.keys() else 0
-    return sz == rec["file_size"] or (final and sz == final)
+    return bool(sz == rec["file_size"] or (final and sz == final))
 
 
 def db_set_status(conn, msg_id, status, dkey=None, final_size=None) -> None:
@@ -839,7 +841,7 @@ def dedup_key(name: str, size: int, kind: str, duration: int = 0) -> str:
     return f"{base}|{size}"
 
 
-def file_state(path: str, total: int, final_size: int = 0, status: str = None) -> str:
+def file_state(path: str, total: int, final_size: int = 0, status: str | None = None) -> str:
     """Состояние файла на диске. total — серверный эталон Telegram.
 
     Видео после ffmpeg faststart (сдвиг moov-атома) физически тяжелее эталона, поэтому:
@@ -1051,7 +1053,7 @@ def verify_export(items, dest, conn=None) -> dict:
     Пишет verify_report.txt в dest; сеть и файлы на диске не трогает. Если передан conn,
     синхронизирует поле status в index.db по результатам сверки (SQL-обновление).
     """
-    buckets = {"COMPLETE": [], "PARTIAL": [], "MISSING": [], "OVERSIZE": []}
+    buckets: dict[str, list] = {"COMPLETE": [], "PARTIAL": [], "MISSING": [], "OVERSIZE": []}
     state_map = {"complete": "COMPLETE", "partial": "PARTIAL",
                  "missing": "MISSING", "oversize": "OVERSIZE"}
     for it in items:
@@ -1523,7 +1525,7 @@ async def download_one(app, file_id, msg_id, dest_path, total_size,
         try:
             mode = "r+b" if downloaded else "wb"
             t0, base = time.time(), downloaded
-            with open(dest_path, mode) as fh:
+            with open(dest_path, mode) as fh:  # type: ignore[assignment]
                 fh.seek(downloaded)
                 current = downloaded
                 progress_bar(worker, msg_id, current, total_size, 0)
@@ -1590,9 +1592,8 @@ async def download_one(app, file_id, msg_id, dest_path, total_size,
             log_error(msg_id, f"обрыв сети ({type(e).__name__}: {e}) — "
                               f"возобновление {net_retries}/{NET_MAX_RETRIES} "
                               f"через {NET_RETRY_WAIT} c")
-            if live:
-                REPORTER.status(f"\n🌐 [msg {msg_id}] обрыв сети — повтор "
-                                f"{net_retries}/{NET_MAX_RETRIES} через {NET_RETRY_WAIT} c…")
+            REPORTER.status(f"\n🌐 [msg {msg_id}] обрыв сети — повтор "
+                            f"{net_retries}/{NET_MAX_RETRIES} через {NET_RETRY_WAIT} c…")
             await asyncio.sleep(NET_RETRY_WAIT)
 
 
@@ -1969,10 +1970,10 @@ def _build_preview(items, s, losers, workers, use_dedup) -> dict:
     eta_avg = s["need_size"] / AVG_SPEED_BPS if s["need_size"] else 0
     eta_peak = s["need_size"] / PEAK_SPEED_BPS if s["need_size"] else 0
     eta_par = s["need_size"] / (AVG_SPEED_BPS * max(1, workers)) if s["need_size"] else 0
-    review = [{"msg_id": l.msg_id, "name": l.name, "size": l.size,
-               "duration": l.duration, "kind": l.kind, "reason": "worse-version",
+    review = [{"msg_id": loser.msg_id, "name": loser.name, "size": loser.size,
+               "duration": loser.duration, "kind": loser.kind, "reason": "worse-version",
                "master_msg_id": w.msg_id, "master_size": w.size}
-              for (l, w) in losers]
+              for (loser, w) in losers]
     return dict(s, eta_avg=eta_avg, eta_peak=eta_peak, eta_par=eta_par,
                 workers=workers, use_dedup=use_dedup, review=review,
                 plan_count=len(items))
@@ -2057,8 +2058,9 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
     try:
       async with app:
         chat = await app.get_chat(cfg["channel"])
-        CHAT_ID = chat.id
-        REPORTER.status(_t("opened", title=getattr(chat, "title", cfg["channel"]), id=chat.id))
+        chat_id = getattr(chat, "id", getattr(chat, "chat_id", None))
+        CHAT_ID = chat_id
+        REPORTER.status(_t("opened", title=getattr(chat, "title", cfg["channel"]), id=chat_id))
         REPORTER.status(_t("dest", dest=dest))
 
         if rescan:
@@ -2073,12 +2075,12 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
         if cached:
             since = max(cached)
             REPORTER.status(_t("index_found", n=len(cached), since=since))
-            new = await collect_new_ids(app, chat.id, since, media, analyzed)
+            new = await collect_new_ids(app, chat_id, since, media, analyzed)
             msg_ids = sorted(set(cached) | set(new))
             REPORTER.status(_t("new_total", new=len(new), total=len(msg_ids)))
         else:
             REPORTER.status(_t("full_scan"))
-            msg_ids = await collect_message_ids(app, chat.id, media, analyzed)
+            msg_ids = await collect_message_ids(app, chat_id, media, analyzed)
             REPORTER.status(_t("total_msgs", n=len(msg_ids)))
         db_save_meta(conn, sorted(analyzed), media)
 
@@ -2110,7 +2112,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
 
         # ── ПРЕДПРОСМОТР ──
         REPORTER.status(_t("analyzing"))
-        items = await build_plan(app, chat.id, msg_ids, allow_kinds, skip_kinds,
+        items = await build_plan(app, chat_id, msg_ids, allow_kinds, skip_kinds,
                                  dest, media, analyzed, conn)
 
         # ── ДВУХПРОХОДНАЯ РЕЗОЛЮЦИЯ КАЧЕСТВА (Pre-flight, до обращения к диску) ──
@@ -2152,7 +2154,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
                         + (_t("preview_dup", dup=s["dup_files"]) if use_dedup else ""))
         REPORTER.status(_t("preview_need", n=s["need_files"], gb=human_gb(s["need_size"])))
         if s["need_size"]:
-            REPORTER.status(f"   ⏱  Оценка времени:")
+            REPORTER.status("   ⏱  Оценка времени:")
             REPORTER.status(f"        • средняя 850 КБ/с (1 поток) : ~{fmt_duration(preview['eta_avg'])}")
             REPORTER.status(f"        • пиковая 1.1 МБ/с (1 поток) : ~{fmt_duration(preview['eta_peak'])}")
             if workers > 1:
@@ -2210,7 +2212,7 @@ async def run_export(cfg, options: "Options", reporter: "Reporter | None" = None
             try:
                 import link_export
                 result["link_stats"] = await link_export.run_link_phase(
-                    app, chat.id, dest, options.link_format, REPORTER, stop_event, log, _t)
+                    app, chat_id, dest, options.link_format, REPORTER, stop_event, log, _t)
             except Exception as e:                       # noqa: BLE001 — фаза ссылок не валит экспорт
                 log_error(0, f"link phase error: {e}")
                 REPORTER.status(_t("link_err", err=e))

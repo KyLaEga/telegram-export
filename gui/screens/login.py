@@ -46,17 +46,17 @@ class LoginScreen(QWidget):
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setHorizontalSpacing(theme.SPACING)
         form.setVerticalSpacing(theme.SPACING)
         # Monolithic layout: value fields stretch to the right edge
         # (AllNonFixedFieldsGrow), and label+field NEVER wrap to separate rows
         # (DontWrapRows) — this prevents overlap when the window shrinks.
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.setRowWrapPolicy(QFormLayout.DontWrapRows)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
 
         def _grow(edit: QLineEdit) -> QLineEdit:
-            edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             return edit
 
         self.api_id = _grow(QLineEdit())
@@ -69,12 +69,12 @@ class LoginScreen(QWidget):
         self.dest = _grow(QLineEdit())
         self.dest.setMinimumWidth(280)
         self.volumes = QComboBox()
-        self.volumes.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.volumes.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.volumes.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.volumes.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._reload_volumes()
         self.volumes.activated.connect(self._pick_volume)
         self.browse_btn = QPushButton()
-        self.browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.browse_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.browse_btn.clicked.connect(self._browse_dest)
         dest_row = QHBoxLayout()
         dest_row.setContentsMargins(0, 0, 0, 0)
@@ -83,7 +83,7 @@ class LoginScreen(QWidget):
         dest_row.addWidget(self.volumes, 0)
         dest_row.addWidget(self.browse_btn, 0)
         dest_box = QWidget()
-        dest_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        dest_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         dest_box.setLayout(dest_row)
 
         # Explicit labels (stored) so retranslate() can update them.
@@ -92,7 +92,7 @@ class LoginScreen(QWidget):
         self.lbl_phone = QLabel()
         self.lbl_channel = QLabel()
         self.lbl_dest = QLabel()
-        self.lbl_dest.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.lbl_dest.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         form.addRow(self.lbl_api_id, self.api_id)
         form.addRow(self.lbl_api_hash, self.api_hash)
         form.addRow(self.lbl_phone, self.phone)
@@ -120,7 +120,7 @@ class LoginScreen(QWidget):
 
         # ── code confirmation block (shown when a code is sent) ──
         self.auth_box = QFrame()
-        self.auth_box.setFrameShape(QFrame.StyledPanel)
+        self.auth_box.setFrameShape(QFrame.Shape.StyledPanel)
         ab = QVBoxLayout(self.auth_box)
         self.code = QLineEdit()
         self.code.returnPressed.connect(self._on_confirm_code)
@@ -141,12 +141,12 @@ class LoginScreen(QWidget):
 
         # ── QR sign-in block (shown during a QR login) ──
         self.qr_box = QFrame()
-        self.qr_box.setFrameShape(QFrame.StyledPanel)
+        self.qr_box.setFrameShape(QFrame.Shape.StyledPanel)
         qb = QVBoxLayout(self.qr_box)
         self.qr_hint = QLabel()
         self.qr_hint.setWordWrap(True)
         self.qr_image = QLabel()
-        self.qr_image.setAlignment(Qt.AlignCenter)
+        self.qr_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.qr_image.setMinimumSize(300, 300)
         # White card so the QR always scans, even in the dark theme.
         self.qr_image.setStyleSheet("background:#FFFFFF; border-radius:8px; padding:12px;")
@@ -157,17 +157,17 @@ class LoginScreen(QWidget):
         qr_btn_row.addWidget(self.qr_cancel_btn)
         qr_btn_row.addStretch(1)
         qb.addWidget(self.qr_hint)
-        qb.addWidget(self.qr_image, 0, Qt.AlignCenter)
+        qb.addWidget(self.qr_image, 0, Qt.AlignmentFlag.AlignCenter)
         qb.addLayout(qr_btn_row)
         self.qr_box.hide()
         root.addWidget(self.qr_box)
 
         # ── shared 2FA password block (used by both code and QR logins) ──
         self.pw_box = QFrame()
-        self.pw_box.setFrameShape(QFrame.StyledPanel)
+        self.pw_box.setFrameShape(QFrame.Shape.StyledPanel)
         pb = QVBoxLayout(self.pw_box)
         self.password = QLineEdit()
-        self.password.setEchoMode(QLineEdit.Password)
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.password.returnPressed.connect(self._on_confirm_password)
         pw_row = QHBoxLayout()
         self.confirm_pw_btn = QPushButton()
@@ -377,7 +377,7 @@ class LoginScreen(QWidget):
         pm = QPixmap(size, size)
         pm.fill(QColor("white"))
         painter = QPainter(pm)
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("black"))
         for y, row in enumerate(matrix):
             for x, filled in enumerate(row):

@@ -47,7 +47,7 @@ class WorkerRow(QWidget):
         head = QHBoxLayout()
         head.setSpacing(theme.SPACING)
         self.name = QLabel(t("worker_wait_file", w=worker))
-        self.name.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.name.setStyleSheet(
             "font-family:'SF Mono','Menlo','Courier New',monospace;font-size:11px;")
         self.speed = QLabel("—")
@@ -307,4 +307,4 @@ class DownloadDashboard(QWidget):
 
     def _append(self, line: str) -> None:
         self.log.appendPlainText(line)
-        self.log.moveCursor(QTextCursor.End)
+        self.log.moveCursor(QTextCursor.MoveOperation.End)

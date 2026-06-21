@@ -74,19 +74,32 @@ def _is_skippable(name: str) -> bool:
 
 
 def scan_folder(folder: str, recursive: bool) -> list[str]:
-    """Список файлов к отправке, отсортированный АЛФАВИТНО (хронология архива)."""
+    """Список файлов к отправке, отсортированный АЛФАВИТНО по полному пути (хронология архива).
+
+    os.scandir вместо listdir+stat — тип записи берётся из самого каталога, без отдельного
+    stat() на файл. В каталоги-симлинки НЕ заходим (follow_symlinks=False), иначе циклический
+    симлинк зациклил бы обход. Каждый scandir закрывается до спуска в подкаталог, поэтому
+    одновременно открыт ровно один дескриптор каталога.
+    """
     files: list[str] = []
-    if recursive:
-        for root, dirs, names in os.walk(folder):
-            dirs.sort()
-            for n in names:
-                if not _is_skippable(n):
-                    files.append(os.path.join(root, n))
-    else:
-        for n in os.listdir(folder):
-            p = os.path.join(folder, n)
-            if os.path.isfile(p) and not _is_skippable(n):
-                files.append(p)
+
+    def _scan(dir_path: str) -> None:
+        subdirs: list[str] = []
+        try:
+            with os.scandir(dir_path) as it:
+                for entry in it:
+                    if _is_skippable(entry.name):
+                        continue
+                    if entry.is_file():
+                        files.append(entry.path)
+                    elif recursive and entry.is_dir(follow_symlinks=False):
+                        subdirs.append(entry.path)
+        except OSError:
+            return
+        for sub in subdirs:
+            _scan(sub)
+
+    _scan(folder)
     files.sort()
     return files
 
@@ -94,10 +107,12 @@ def scan_folder(folder: str, recursive: bool) -> list[str]:
 # ── Изолированная immortal-БД отправленного (upload_state.db) ────────────────────
 def upload_db_connect() -> sqlite3.Connection:
     path = os.path.join(em.DATA_DIR, UPLOAD_DB_NAME)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=FULL")     # каждый отправленный файл — НАМЕРТВО
+    conn.execute("PRAGMA mmap_size=268435456")
+    conn.execute("PRAGMA cache_size=-10000")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS uploads (
             chat_key   TEXT NOT NULL,

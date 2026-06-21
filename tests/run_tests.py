@@ -283,13 +283,16 @@ def test_link_export() -> None:
         def __init__(self, url): self.url = url
 
     class _WP:
-        url = "https://s.tld/c/1"; display_url = "s.tld/c/1"; title = "Comic 1"
+        url = "https://s.tld/c/1"
+        display_url = "s.tld/c/1"
+        title = "Comic 1"
 
     class _Msg:
         web_page = _WP()
         text = "x https://i.tld/a.jpg https://i.tld/a.jpg"
         entities = [_Ent("https://h.tld/f.cbz")]
-        caption = None; caption_entities = []
+        caption = None
+        caption_entities = []
 
     check(le.extract_links(_Msg()) ==
           ["https://s.tld/c/1", "https://h.tld/f.cbz", "https://i.tld/a.jpg"],
@@ -316,8 +319,10 @@ def test_link_export() -> None:
 
     d = tempfile.mkdtemp()
     # Assembly is now PATH-based (низкая память): кладём страницы на диск и собираем.
-    p_jpg = os.path.join(d, "a.jpg"); open(p_jpg, "wb").write(jpg_hdr)
-    p_png = os.path.join(d, "b.png"); open(p_png, "wb").write(b"\x89PNG\r\n\x1a\nXX")
+    p_jpg = os.path.join(d, "a.jpg")
+    open(p_jpg, "wb").write(jpg_hdr)
+    p_png = os.path.join(d, "b.png")
+    open(p_png, "wb").write(b"\x89PNG\r\n\x1a\nXX")
     cbz = os.path.join(d, "c.cbz")
     le.save_cbz([p_jpg, p_png], cbz)
     with zipfile.ZipFile(cbz) as z:
@@ -329,10 +334,12 @@ def test_link_export() -> None:
         import io as _io
 
         from PIL import Image
-        b = _io.BytesIO(); Image.new("RGB", (12, 9), (10, 20, 30)).save(b, "JPEG")
+        b = _io.BytesIO()
+        Image.new("RGB", (12, 9), (10, 20, 30)).save(b, "JPEG")
         real = b.getvalue()
         check(le._jpeg_dimensions(real) == (12, 9, 3), "_jpeg_dimensions из SOF")
-        rp = os.path.join(d, "real.jpg"); open(rp, "wb").write(real)
+        rp = os.path.join(d, "real.jpg")
+        open(rp, "wb").write(real)
         pdf = os.path.join(d, "df.pdf")
         le.save_pdf([rp], pdf)
         raw = open(pdf, "rb").read()

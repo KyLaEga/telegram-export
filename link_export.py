@@ -706,7 +706,7 @@ async def run_link_phase(app, chat_id, dest, fmt, reporter, stop_event,
             return
         totals["messages"] += 1
         res = await asyncio.to_thread(
-            lambda mid=m.id, u=urls, lab=_message_label(m):
+            lambda mid=m.id, u=urls, lab=_message_label(m):  # type: ignore[misc]
             process_links_sync(mid, u, out_dir, fmt, label=lab, log=log))
         for k in ("saved", "skipped", "failed"):
             totals[k] += res[k]

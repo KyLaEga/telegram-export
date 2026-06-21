@@ -28,7 +28,7 @@ pipe). С пулом ExportAuthorization выполняется один раз 
 import asyncio
 import json
 import os
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
 from pyrogram import Client, raw, utils
 from pyrogram.errors import FloodWait, FileReferenceExpired
@@ -55,7 +55,7 @@ def _build_location(file_id_obj: FileId):
     ft = file_id_obj.file_type
     if ft == FileType.CHAT_PHOTO:
         if file_id_obj.chat_id > 0:
-            peer = raw.types.InputPeerUser(
+            peer: Any = raw.types.InputPeerUser(
                 user_id=file_id_obj.chat_id, access_hash=file_id_obj.chat_access_hash)
         elif file_id_obj.chat_access_hash == 0:
             peer = raw.types.InputPeerChat(chat_id=-file_id_obj.chat_id)
@@ -103,7 +103,7 @@ class _DCPool:
         self._lock = asyncio.Lock()
 
     async def _make_session(self) -> Session:
-        session = Session(self.client, self.dc_id, self.auth_key,
+        session = Session(self.client, self.dc_id, self.auth_key or b"",
                           self.test_mode, is_media=True)
         await session.start()
         return session
@@ -275,9 +275,8 @@ async def fast_download_file(
             progress(file_size)
         return
 
-    fh = open(tmp_path, "r+b")
     lock = asyncio.Lock()
-    state = {"done_bytes": done_bytes, "since_flush": 0, "fatal": None}
+    state: dict[str, Any] = {"done_bytes": done_bytes, "since_flush": 0, "fatal": None}
 
     async def fetch_part(session: Session, idx: int):
         offset = idx * PART_SIZE
@@ -315,7 +314,7 @@ async def fast_download_file(
                 return
 
             n = None
-            last_err = None
+            last_err: Exception | None = None
             for attempt in range(PART_RETRIES):
                 if state["fatal"] is not None:
                     return
@@ -357,13 +356,19 @@ async def fast_download_file(
 
     pool = await get_pool(client, dc_id, pool_size or conns)
     slots = await pool.lease(conns)
+    # Файл открываем ТОЛЬКО после успешной аренды сессий: если get_pool/lease упадут
+    # (типично при флапающей сети), дескриптор файла не повиснет. release слотов — во
+    # внешнем finally, чтобы сессии вернулись в пул даже если open() не смог открыть tmp.
     try:
-        await asyncio.gather(*(worker(s) for s in slots))
+        fh = open(tmp_path, "r+b")  # type: ignore[assignment]
+        try:
+            await asyncio.gather(*(worker(s) for s in slots))
+        finally:
+            fh.flush()
+            os.fsync(fh.fileno())
+            fh.close()
+            _save_map(map_path, done)
     finally:
-        fh.flush()
-        os.fsync(fh.fileno())
-        fh.close()
-        _save_map(map_path, done)
         pool.release(slots)
 
     if state["fatal"] is not None:

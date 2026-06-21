@@ -406,8 +406,8 @@ def scroll_page(widget: QWidget) -> "tuple[QVBoxLayout, QVBoxLayout]":
     scroll = QScrollArea()
     scroll.setObjectName("pageScroll")
     scroll.setWidgetResizable(True)
-    scroll.setFrameShape(QFrame.NoFrame)
-    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     inner = QWidget()
     inner.setObjectName("pageScrollInner")
@@ -433,7 +433,7 @@ def make_spinbox() -> QSpinBox:
     sp = QSpinBox()
     sp.setMinimumWidth(90)
     sp.setMinimumHeight(32)
-    sp.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    sp.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     return sp
 
 
@@ -446,29 +446,39 @@ class SliderField(QWidget):
 
     def __init__(self, minimum: int, maximum: int, value: int, parent=None) -> None:
         super().__init__(parent)
-        self.slider = QSlider(Qt.Horizontal)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(minimum, maximum)
         self.slider.setValue(value)
         self.slider.setSingleStep(1)
         self.slider.setPageStep(1)
-        self.slider.setTickPosition(QSlider.TicksBelow)
+        self.slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.slider.setTickInterval(1)
         self.slider.setMinimumHeight(26)
-        self.slider.setCursor(Qt.PointingHandCursor)
+        self.slider.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.chip = QLabel(str(value))
         self.chip.setObjectName("valChip")
-        self.chip.setAlignment(Qt.AlignCenter)
+        self.chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._lo = QLabel(str(minimum)); self._lo.setObjectName("sliderEnd")
-        self._hi = QLabel(str(maximum)); self._hi.setObjectName("sliderEnd")
+        self._lo = QLabel(str(minimum))
+        self._lo.setObjectName("sliderEnd")
+        self._hi = QLabel(str(maximum))
+        self._hi.setObjectName("sliderEnd")
 
-        top = QHBoxLayout(); top.setContentsMargins(0, 0, 0, 0); top.setSpacing(SPACING)
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(SPACING)
         top.addWidget(self.slider, 1)
         top.addWidget(self.chip, 0)
-        ends = QHBoxLayout(); ends.setContentsMargins(2, 0, 2, 0); ends.setSpacing(0)
-        ends.addWidget(self._lo, 0); ends.addStretch(1); ends.addWidget(self._hi, 0)
-        lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(2)
+        ends = QHBoxLayout()
+        ends.setContentsMargins(2, 0, 2, 0)
+        ends.setSpacing(0)
+        ends.addWidget(self._lo, 0)
+        ends.addStretch(1)
+        ends.addWidget(self._hi, 0)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
         lay.addLayout(top)
         lay.addLayout(ends)
 
@@ -537,7 +547,7 @@ class Spinner(QWidget):
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt override)
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.translate(self.width() / 2, self.height() / 2)
         p.rotate(self._angle)
         n = 12
@@ -545,7 +555,7 @@ class Spinner(QWidget):
         r_in = r_out * 0.45
         pen = QPen()
         pen.setWidth(2)
-        pen.setCapStyle(Qt.RoundCap)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         for i in range(n):
             c = QColor(self._color)
             c.setAlphaF((i + 1) / n)
@@ -607,7 +617,7 @@ class WarningBanner(QFrame):
         self._icon.setStyleSheet("background:transparent;font-size:14px;")
         self._text = QLabel("")
         self._text.setWordWrap(True)
-        lay.addWidget(self._icon, 0, Qt.AlignTop)
+        lay.addWidget(self._icon, 0, Qt.AlignmentFlag.AlignTop)
         lay.addWidget(self._text, 1)
         self._restyle()
 

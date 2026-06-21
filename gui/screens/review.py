@@ -70,18 +70,18 @@ class ReviewScreen(QWidget):
 
         self.table = QTableView()
         self.table.setModel(self.model)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # only checkboxes
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)  # only checkboxes
         self.table.setShowGrid(True)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(28)
         hdr = self.table.horizontalHeader()
         hdr.setHighlightSections(False)
-        hdr.setSectionResizeMode(self.COL_NAME, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
         for col in (self.COL_CHECK, self.COL_MSG, self.COL_SIZE,
                     self.COL_DUR, self.COL_REASON):
-            hdr.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.table.doubleClicked.connect(self._toggle_row)
         root.addWidget(self.table, 1)
 
@@ -157,9 +157,9 @@ class ReviewScreen(QWidget):
             for rec in losers:
                 chk = QStandardItem()
                 chk.setCheckable(True)
-                chk.setCheckState(Qt.Unchecked)
-                chk.setData(int(rec["msg_id"]), Qt.UserRole)  # source-of-truth msg_id
-                chk.setTextAlignment(Qt.AlignCenter)
+                chk.setCheckState(Qt.CheckState.Unchecked)
+                chk.setData(int(rec["msg_id"]), Qt.ItemDataRole.UserRole)  # source-of-truth msg_id
+                chk.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.model.appendRow([
                     chk,
                     self._cell(str(rec.get("msg_id", ""))),
@@ -193,13 +193,13 @@ class ReviewScreen(QWidget):
     def _toggle_row(self, index) -> None:
         item = self.model.item(index.row(), self.COL_CHECK)
         if item is not None:
-            item.setCheckState(Qt.Unchecked if item.checkState() == Qt.Checked
-                               else Qt.Checked)
+            item.setCheckState(Qt.CheckState.Unchecked if item.checkState() == Qt.CheckState.Checked
+                               else Qt.CheckState.Checked)
 
     def _set_all(self, checked: bool) -> None:
         # No blockSignals: dataChanged must reach the view or the checkmarks won't
         # repaint. _bulk_update only defers the counter recompute to the end.
-        state = Qt.Checked if checked else Qt.Unchecked
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
         self._bulk_update = True
         try:
             for row in range(self.model.rowCount()):
@@ -216,8 +216,8 @@ class ReviewScreen(QWidget):
         out: "set[int]" = set()
         for row in range(self.model.rowCount()):
             item = self.model.item(row, self.COL_CHECK)
-            if item.checkState() == Qt.Checked:
-                out.add(int(item.data(Qt.UserRole)))
+            if item.checkState() == Qt.CheckState.Checked:
+                out.add(int(item.data(Qt.ItemDataRole.UserRole)))
         return out
 
     def _update_count(self) -> None:

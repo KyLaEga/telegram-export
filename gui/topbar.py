@@ -11,7 +11,7 @@ and listens to ``translator.language_changed`` to retranslate every screen.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
 
 from . import theme
